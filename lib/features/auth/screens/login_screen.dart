@@ -71,7 +71,7 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
                 flex: 5,
                 child: Container(
                   decoration: BoxDecoration(
-                    color: primaryRedColor,
+                    color: primaryRedColor, 
                     image: DecorationImage(
                       image: AssetImage('assets/images/login_illustration.png'),
                       fit: BoxFit.cover,

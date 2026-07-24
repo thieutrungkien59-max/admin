@@ -10,6 +10,8 @@ dependencies:
   flutter:
     sdk: flutter
   go_router: ^17.3.0
+  flutter_map: ^7.0.2 # Thư viện bản đồ
+  latlong2: ^0.9.1 # Thư viện xử lý tọa độ
   http: ^1.6.0
 
 dev_dependencies:

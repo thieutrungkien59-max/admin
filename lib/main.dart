@@ -1,19 +1,21 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-// Import cấu hình màu sắc
-import 'core/constants/app_colors.dart';
+
+// Import cấu hình màu sắc (Đã chuẩn hóa đường dẫn package)
+import 'package:admin/core/constants/app_colors.dart';
+
 // Import các màn hình Giao diện (Screens)
-import 'features/auth/screens/login_screen.dart';
-import 'features/dashboard/screens/admin_main_layout.dart';
-import 'features/dashboard/screens/dashboard_screen.dart';
-import 'features/dispatch_map/screens/dispatch_map_screen.dart';
-import 'features/dispatch_center/screens/dispatch_center_screen.dart';
-import 'features/order_management/screens/order_list_screen.dart';
-import 'features/order_management/screens/order_detail_screen.dart';
-import 'features/cod_reconciliation/screens/cod_review_screen.dart';
-import 'features/shipper_management/screens/shipper_list_screen.dart';
-import 'features/shipper_management/screens/approve_shipper_screen.dart';
-import 'features/system_config/screens/config_screen.dart';
+import 'package:admin/features/auth/screens/login_screen.dart';
+import 'package:admin/features/dashboard/screens/admin_main_layout.dart';
+import 'package:admin/features/dashboard/screens/dashboard_screen.dart';
+import 'package:admin/features/dispatch_map/screens/dispatch_map_screen.dart';
+import 'package:admin/features/dispatch_center/screens/dispatch_center_screen.dart';
+import 'package:admin/features/order_management/screens/order_list_screen.dart';
+import 'package:admin/features/order_management/screens/order_detail_screen.dart';
+import 'package:admin/features/cod_reconciliation/screens/cod_review_screen.dart';
+import 'package:admin/features/shipper_management/screens/shipper_list_screen.dart';
+import 'package:admin/features/shipper_management/screens/approve_shipper_screen.dart';
+import 'package:admin/features/system_config/screens/config_screen.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -44,7 +46,7 @@ final GoRouter _router = GoRouter(
           builder: (context, state) => const DashboardScreen(),
         ),
 
-        // Trang Bản đồ trực tuyến(UC05)
+        // Trang Bản đồ trực tuyến (UC05)
         GoRoute(
           path: '/dispatch_map',
           builder: (context, state) => const DispatchMapScreen(),
@@ -143,6 +145,7 @@ class LogiRouteAdminApp extends StatelessWidget {
           backgroundColor: Colors.white,
           iconTheme: IconThemeData(color: Colors.black87),
         ),
+        // 🛠️ ĐÃ SỬA LỖI: Đổi CardThemeData -> CardTheme
         cardTheme: CardThemeData(
           elevation: 0,
           shape: RoundedRectangleBorder(

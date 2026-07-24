@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:admin/models/don_hang_model.dart';
 import 'package:admin/models/shipper_model.dart';
+import 'package:admin/services/api_service.dart';
 
 class DispatchCenterScreen extends StatefulWidget {
   const DispatchCenterScreen({super.key});
@@ -13,153 +14,109 @@ class _DispatchCenterScreenState extends State<DispatchCenterScreen> {
   final Color primaryRed = const Color(0xFFD32F2F);
   final Color bgCream = const Color(0xFFF9F6F0);
 
-  late List<DonHangModel> _pendingOrders;
-  late List<ShipperModel> _recommendedShippers;
+  List<DonHangModel> _pendingOrders = [];
+  List<ShipperModel> _recommendedShippers = [];
   DonHangModel? _selectedOrder;
+
+  bool _isLoading = true;
+  String? _errorMessage;
 
   @override
   void initState() {
     super.initState();
-    _loadMockData();
+    _fetchDataFromApi();
   }
 
-  void _loadMockData() {
-    _pendingOrders = [
-      DonHangModel(
-        id: '1',
-        maDon: '#ORD-VN8821',
-        thoiGianCho: '08:42',
-        trongLuong: 12.50,
-        kichThuoc: '40 x 30 x 20 cm',
-        dungTich: 0.024,
-        tinhChat: 'DỄ VỠ',
-        diemLayHang: 'Vinhomes Central Park, P.22, Q.Bình Thạnh, TP.HCM',
-        lienHeLayHang: 'A. Hùng (090xxxx123)',
-        diemGiaoHang: 'Lô E2a-7, Đường D1, Khu Công nghệ Cao, Thủ Đức',
-        lienHeGiaoHang: 'Chị Lan (098xxxx456)',
-        duKienGiaoPhut: 60,
-        giaCuoc: '145.000đ',
-        hinhThucGiao: 'Giao hỏa tốc',
-        tienCod: '2.400.000đ',
-        quangDuongKm: 8.4,
-        isUrgent: true,
-      ),
-      DonHangModel(
-        id: '2',
-        maDon: '#ORD-VN9012',
-        thoiGianCho: '02:15',
-        trongLuong: 5.0,
-        kichThuoc: '25x25x25 cm',
-        dungTich: 0.015,
-        tinhChat: 'THƯỜNG',
-        diemLayHang: '221 Nguyễn Đình Chiểu, Q.3',
-        lienHeLayHang: 'A. Nam (091xxxx789)',
-        diemGiaoHang: '45 Lê Lợi, Q.1',
-        lienHeGiaoHang: 'Bà Hoa (093xxxx111)',
-        duKienGiaoPhut: 30,
-        giaCuoc: '45.000đ',
-        hinhThucGiao: 'Giao tiêu chuẩn',
-        tienCod: '0đ',
-        quangDuongKm: 3.2,
-      ),
-      DonHangModel(
-        id: '3',
-        maDon: '#ORD-VN9015',
-        thoiGianCho: '01:50',
-        trongLuong: 2.8,
-        kichThuoc: '10x15x20 cm',
-        dungTich: 0.003,
-        tinhChat: 'DỄ VỠ',
-        diemLayHang: 'Chợ Lớn, Q.5',
-        lienHeLayHang: 'Chú Ba (097xxxx222)',
-        diemGiaoHang: 'ĐH Quốc Gia, Thủ Đức',
-        lienHeGiaoHang: 'Minh (096xxxx333)',
-        duKienGiaoPhut: 45,
-        giaCuoc: '85.000đ',
-        hinhThucGiao: 'Giao nhanh',
-        tienCod: '350.000đ',
-        quangDuongKm: 12.0,
-      ),
-      DonHangModel(
-        id: '4',
-        maDon: '#ORD-VN9021',
-        thoiGianCho: '00:45',
-        trongLuong: 15.0,
-        kichThuoc: '50x50x50 cm',
-        dungTich: 0.125,
-        tinhChat: 'CỒNG KỀNH',
-        diemLayHang: 'Kho 24, Tân Thuận, Q.7',
-        lienHeLayHang: 'Kho Vận (090xxxx999)',
-        diemGiaoHang: 'Lotte Mart, Q.11',
-        lienHeGiaoHang: 'Quản lý (094xxxx888)',
-        duKienGiaoPhut: 50,
-        giaCuoc: '120.000đ',
-        hinhThucGiao: 'Giao tiết kiệm',
-        tienCod: '1.200.000đ',
-        quangDuongKm: 9.5,
-      ),
-    ];
+  Future<void> _fetchDataFromApi() async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
 
-    _recommendedShippers = [
-      ShipperModel(
-        id: 'S1',
-        hoTen: 'Lê Văn Thành',
-        bienSo: '59-P1 882.12',
-        danhGia: 4.9,
-        soDonDaGiao: 242,
-        khoangCachKm: 1.2,
-        thoiGianRanhPhut: 45,
-        isOptimal: true,
-      ),
-      ShipperModel(
-        id: 'S2',
-        hoTen: 'Trần Minh Tâm',
-        bienSo: '59-L2 441.56',
-        danhGia: 4.7,
-        soDonDaGiao: 180,
-        khoangCachKm: 2.5,
-        thoiGianRanhPhut: 12,
-      ),
-      ShipperModel(
-        id: 'S3',
-        hoTen: 'Nguyễn Quốc Huy',
-        bienSo: '59-X1 909.11',
-        danhGia: 4.5,
-        soDonDaGiao: 95,
-        khoangCachKm: 4.1,
-        thoiGianRanhPhut: 0,
-        isOnline: false,
-        lyDoKhongKhaDung: 'Sắp hết ca (15p nữa)',
-      ),
-    ];
+    try {
+      final results = await Future.wait([
+        ApiService.getDanhSachDonHang(),
+        ApiService.getDanhSachShipper(),
+      ]);
 
-    if (_pendingOrders.isNotEmpty) {
-      _selectedOrder = _pendingOrders.first;
+      final List<DonHangModel> loadedOrders = (results[0] as List)
+          .map((json) => DonHangModel.fromJson(json as Map<String, dynamic>))
+          .toList();
+
+      final List<ShipperModel> loadedShippers = (results[1] as List)
+          .map((json) => ShipperModel.fromJson(json as Map<String, dynamic>))
+          .toList();
+
+      setState(() {
+        _pendingOrders = loadedOrders;
+        _selectedOrder = loadedOrders.isNotEmpty ? loadedOrders.first : null;
+        _recommendedShippers = loadedShippers;
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _errorMessage = e.toString().replaceAll('Exception: ', '');
+        _isLoading = false;
+      });
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    if (_isLoading) {
+      return Container(
+        color: bgCream,
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              CircularProgressIndicator(color: primaryRed),
+              const SizedBox(height: 16),
+              const Text('Đang tải dữ liệu từ Server...', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.black54)),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (_errorMessage != null) {
+      return Container(
+        color: bgCream,
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.error_outline_rounded, color: Colors.red, size: 48),
+              const SizedBox(height: 12),
+              Text(_errorMessage!, style: const TextStyle(fontSize: 14, color: Colors.black87), textAlign: TextAlign.center),
+              const SizedBox(height: 16),
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(backgroundColor: primaryRed, foregroundColor: Colors.white),
+                onPressed: _fetchDataFromApi,
+                icon: const Icon(Icons.refresh, size: 18),
+                label: const Text('Thử lại'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     return Container(
       color: bgCream,
       padding: const EdgeInsets.all(12),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // 1. Danh sách hàng chờ
           SizedBox(
             width: 330,
             child: _buildPendingOrdersColumn(),
           ),
           const SizedBox(width: 12),
-
-          // 2. Chi tiết đơn hàng
           Expanded(
             child: _buildOrderDetailColumn(),
           ),
           const SizedBox(width: 12),
-
-          // 3. Shipper đề xuất
           SizedBox(
             width: 340,
             child: _buildShipperRecommendationsColumn(),
@@ -169,7 +126,6 @@ class _DispatchCenterScreenState extends State<DispatchCenterScreen> {
     );
   }
 
-  // CỘT 1: DANH SÁCH HÀNG CHỜ
   Widget _buildPendingOrdersColumn() {
     final urgentOrders = _pendingOrders.where((o) => o.isUrgent).toList();
     final normalOrders = _pendingOrders.where((o) => !o.isUrgent).toList();
@@ -178,58 +134,52 @@ class _DispatchCenterScreenState extends State<DispatchCenterScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            const Text(
-              'Danh sách hàng chờ',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            Row(
+              children: [
+                const Text('Danh sách hàng chờ', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(color: Colors.grey.shade200, borderRadius: BorderRadius.circular(12)),
+                  child: Text('${_pendingOrders.length} đơn', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                ),
+              ],
             ),
-            const SizedBox(width: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-              decoration: BoxDecoration(
-                color: Colors.grey.shade200,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Text(
-                '${_pendingOrders.length} đơn',
-                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
-              ),
+            IconButton(
+              icon: const Icon(Icons.refresh, size: 18),
+              tooltip: 'Tải lại danh sách',
+              onPressed: _fetchDataFromApi,
             ),
           ],
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 8),
         Expanded(
-          child: ListView(
-            children: [
-              if (urgentOrders.isNotEmpty) ...[
-                Row(
+          child: _pendingOrders.isEmpty
+              ? const Center(child: Text('Không có đơn hàng nào chờ điều phối', style: TextStyle(color: Colors.grey, fontSize: 13)))
+              : ListView(
                   children: [
-                    Text(
-                      '* ',
-                      style: TextStyle(color: primaryRed, fontWeight: FontWeight.bold, fontSize: 14),
-                    ),
-                    Text(
-                      'Cần điều phối thủ công (>5ph)',
-                      style: TextStyle(color: primaryRed, fontWeight: FontWeight.bold, fontSize: 12),
-                    ),
+                    if (urgentOrders.isNotEmpty) ...[
+                      Row(
+                        children: [
+                          Text('* ', style: TextStyle(color: primaryRed, fontWeight: FontWeight.bold, fontSize: 14)),
+                          Text('Cần điều phối thủ công (>5ph)', style: TextStyle(color: primaryRed, fontWeight: FontWeight.bold, fontSize: 12)),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      ...urgentOrders.map((order) => _buildOrderCard(order)),
+                      const SizedBox(height: 12),
+                    ],
+                    if (normalOrders.isNotEmpty) ...[
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 6),
+                        child: Text('CHỜ PHÂN CÔNG TỰ ĐỘNG', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.grey)),
+                      ),
+                      ...normalOrders.map((order) => _buildOrderCard(order)),
+                    ],
                   ],
                 ),
-                const SizedBox(height: 8),
-                ...urgentOrders.map((order) => _buildOrderCard(order)),
-                const SizedBox(height: 12),
-              ],
-              if (normalOrders.isNotEmpty) ...[
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 6),
-                  child: Text(
-                    'CHỜ PHÂN CÔNG TỰ ĐỘNG',
-                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.grey),
-                  ),
-                ),
-                ...normalOrders.map((order) => _buildOrderCard(order)),
-              ],
-            ],
-          ),
         ),
       ],
     );
@@ -251,10 +201,7 @@ class _DispatchCenterScreenState extends State<DispatchCenterScreen> {
             width: isSelected ? 1.5 : 1.0,
           ),
           boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.03),
-              blurRadius: 4,
-            ),
+            BoxShadow(color: Colors.black.withValues(alpha: 0.03), blurRadius: 4),
           ],
         ),
         child: Column(
@@ -315,7 +262,6 @@ class _DispatchCenterScreenState extends State<DispatchCenterScreen> {
     );
   }
 
-  // CỘT 2: CHI TIẾT ĐƠN HÀNG
   Widget _buildOrderDetailColumn() {
     final order = _selectedOrder;
 
@@ -323,7 +269,7 @@ class _DispatchCenterScreenState extends State<DispatchCenterScreen> {
       return Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),
-        child: const Center(child: Text('Vui lòng chọn một đơn hàng')),
+        child: const Center(child: Text('Không có đơn hàng nào được chọn')),
       );
     }
 
@@ -357,7 +303,6 @@ class _DispatchCenterScreenState extends State<DispatchCenterScreen> {
               ],
             ),
             const SizedBox(height: 16),
-
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -365,7 +310,7 @@ class _DispatchCenterScreenState extends State<DispatchCenterScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text('THÔNG SỐ KỸ THUẬT', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey)),
+                      const Text('THÔNG SỐ KĨ THUẬT', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey)),
                       const SizedBox(height: 8),
                       _buildSpecRow('Trọng lượng:', '${order.trongLuong.toStringAsFixed(2)} kg'),
                       _buildSpecRow('Kích thước:', order.kichThuoc),
@@ -409,10 +354,8 @@ class _DispatchCenterScreenState extends State<DispatchCenterScreen> {
             const SizedBox(height: 20),
             const Divider(height: 1),
             const SizedBox(height: 16),
-
             Text('TUYẾN ĐƯỜNG VẬN CHUYỂN (${order.quangDuongKm} KM)', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.grey)),
             const SizedBox(height: 12),
-
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -448,38 +391,6 @@ class _DispatchCenterScreenState extends State<DispatchCenterScreen> {
                 ),
               ],
             ),
-            const SizedBox(height: 16),
-
-            Container(
-              height: 160,
-              width: double.infinity,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: const Color(0xFFE2E8F0)),
-                image: const DecorationImage(
-                  image: AssetImage('assets/images/login_illustration.png'),
-                  fit: BoxFit.cover,
-                ),
-              ),
-              child: Stack(
-                children: [
-                  Positioned(
-                    bottom: 8,
-                    right: 8,
-                    child: ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.white,
-                        foregroundColor: Colors.black87,
-                        elevation: 2,
-                      ),
-                      onPressed: () {},
-                      icon: const Icon(Icons.open_in_full, size: 14),
-                      label: const Text('Mở bản đồ lớn', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
-                    ),
-                  ),
-                ],
-              ),
-            ),
           ],
         ),
       ),
@@ -507,7 +418,6 @@ class _DispatchCenterScreenState extends State<DispatchCenterScreen> {
     );
   }
 
-  // CỘT 3: SHIPPER ĐỀ XUẤT
   Widget _buildShipperRecommendationsColumn() {
     final availableCount = _recommendedShippers.where((s) => s.isOnline).length;
 
@@ -538,14 +448,6 @@ class _DispatchCenterScreenState extends State<DispatchCenterScreen> {
             IconButton(icon: const Icon(Icons.tune, size: 18), onPressed: () {}),
           ],
         ),
-        const SizedBox(height: 6),
-        Row(
-          children: [
-            _buildFilterChip('Tải trọng > 15kg', hasRemove: true),
-            const SizedBox(width: 6),
-            _buildFilterChip('Bán kính 3km'),
-          ],
-        ),
         const SizedBox(height: 12),
         Expanded(
           child: ListView.separated(
@@ -555,27 +457,6 @@ class _DispatchCenterScreenState extends State<DispatchCenterScreen> {
           ),
         ),
       ],
-    );
-  }
-
-  Widget _buildFilterChip(String label, {bool hasRemove = false}) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFCBD5E1)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(label, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w500)),
-          if (hasRemove) ...[
-            const SizedBox(width: 4),
-            const Icon(Icons.close, size: 12, color: Colors.grey),
-          ],
-        ],
-      ),
     );
   }
 
@@ -604,7 +485,6 @@ class _DispatchCenterScreenState extends State<DispatchCenterScreen> {
             ),
             const SizedBox(height: 4),
           ],
-
           Row(
             children: [
               CircleAvatar(
@@ -635,7 +515,6 @@ class _DispatchCenterScreenState extends State<DispatchCenterScreen> {
             ],
           ),
           const SizedBox(height: 10),
-
           if (shipper.isOnline)
             Row(
               children: [
@@ -673,9 +552,7 @@ class _DispatchCenterScreenState extends State<DispatchCenterScreen> {
               padding: const EdgeInsets.symmetric(vertical: 4),
               child: Text(shipper.lyDoKhongKhaDung!, style: const TextStyle(fontSize: 11, color: Colors.grey, fontStyle: FontStyle.italic)),
             ),
-
           const SizedBox(height: 12),
-
           SizedBox(
             width: double.infinity,
             height: 36,
