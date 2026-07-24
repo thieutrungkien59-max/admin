@@ -1,6 +1,6 @@
 name: admin
 description: "A new Flutter project."
-publish_to: 'none'
+publish_to: "none"
 version: 0.1.0+1
 
 environment:
@@ -10,6 +10,7 @@ dependencies:
   flutter:
     sdk: flutter
   go_router: ^17.3.0
+  http: ^1.6.0
 
 dev_dependencies:
   flutter_test:
@@ -18,3 +19,5 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/images/login_illustration.png
