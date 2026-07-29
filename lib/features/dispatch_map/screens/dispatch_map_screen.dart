@@ -35,7 +35,7 @@ class _DispatchMapScreenState extends State<DispatchMapScreen> {
 
     try {
       final results = await Future.wait([
-        ApiService.getDanhSachDonHang(),
+        ApiService.getDonHangChoNhan(),
         ApiService.getDanhSachShipper(),
       ]);
 

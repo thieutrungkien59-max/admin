@@ -1,10 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-
-// Import cấu hình màu sắc (Đã chuẩn hóa đường dẫn package)
+// Import cấu hình màu sắc
 import 'package:admin/core/constants/app_colors.dart';
-
-// Import các màn hình Giao diện (Screens)
+// Import các màn hình Giao diện
 import 'package:admin/features/auth/screens/login_screen.dart';
 import 'package:admin/features/dashboard/screens/admin_main_layout.dart';
 import 'package:admin/features/dashboard/screens/dashboard_screen.dart';
@@ -22,9 +20,7 @@ void main() {
   runApp(const LogiRouteAdminApp());
 }
 
-// =========================================================================
-// CẤU HÌNH ĐỊNH TUYẾN CHUYỂN TRANG (GO ROUTER TỔNG)
-// =========================================================================
+// CẤU HÌNH ĐỊNH TUYẾN CHUYỂN TRANG
 final GoRouter _router = GoRouter(
   initialLocation: '/login', // Khi mở Web lên sẽ nhảy vào trang Đăng nhập trước
   routes: [
@@ -37,7 +33,7 @@ final GoRouter _router = GoRouter(
     // 2. Luồng Quản trị (Dùng ShellRoute để giữ cố định Sidebar Menu & Topbar)
     ShellRoute(
       builder: (context, state, child) {
-        return AdminMainLayout(child: child); // Gọi bộ khung Layout chung
+        return AdminMainLayout(child: child);
       },
       routes: [
         // Trang Bảng điều khiển (Dashboard Tổng quan)
@@ -66,11 +62,14 @@ final GoRouter _router = GoRouter(
 
         // Trang Chi tiết Đơn hàng
         GoRoute(
-          path: '/order_detail',
-          builder: (context, state) => const OrderDetailScreen(),
+          path: '/order_detail/:orderId',
+          builder: (context, state) {
+            final orderId = state.pathParameters['orderId'] ?? '';
+            return OrderDetailScreen(orderId: orderId);
+          },
         ),
 
-        // Trang Đối soát tài chính COD (UC12)
+        // Trang Đối soát tài chính COD
         GoRoute(
           path: '/cod_reconciliation',
           builder: (context, state) => const CodReviewScreen(),
@@ -82,13 +81,13 @@ final GoRouter _router = GoRouter(
           builder: (context, state) => const ShipperListScreen(),
         ),
 
-        // Trang Duyệt hồ sơ Tài xế mới (UC16)
+        // Trang Duyệt hồ sơ Tài xế mới
         GoRoute(
           path: '/approve_shipper',
           builder: (context, state) => const ApproveShipperScreen(),
         ),
 
-        // Trang Cấu hình tham số & Giờ cao điểm (UC06)
+        // Trang Cấu hình tham số & Giờ cao điểm
         GoRoute(
           path: '/system_config',
           builder: (context, state) => const SystemConfigScreen(),
@@ -97,7 +96,7 @@ final GoRouter _router = GoRouter(
     ),
   ],
 
-  // Bắt lỗi khi gõ sai đường dẫn URL trên trình duyệt Web (404 Page)
+  // Bắt lỗi 404 khi sai đường dẫn trên trình duyệt Web
   errorBuilder: (context, state) => Scaffold(
     body: Center(
       child: Column(
@@ -120,9 +119,6 @@ final GoRouter _router = GoRouter(
   ),
 );
 
-// =========================================================================
-// WIDGET GỐC CỦA ỨNG DỤNG LOGIROUTE ADMIN
-// =========================================================================
 class LogiRouteAdminApp extends StatelessWidget {
   const LogiRouteAdminApp({super.key});
 
@@ -145,7 +141,6 @@ class LogiRouteAdminApp extends StatelessWidget {
           backgroundColor: Colors.white,
           iconTheme: IconThemeData(color: Colors.black87),
         ),
-        // 🛠️ ĐÃ SỬA LỖI: Đổi CardThemeData -> CardTheme
         cardTheme: CardThemeData(
           elevation: 0,
           shape: RoundedRectangleBorder(

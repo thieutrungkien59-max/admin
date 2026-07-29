@@ -1,12 +1,107 @@
 import 'package:flutter/material.dart';
 import '../../../core/constants/app_colors.dart';
+import 'package:admin/services/api_service.dart';
 
-class OrderDetailScreen extends StatelessWidget {
+class OrderDetailScreen extends StatefulWidget {
   final String orderId;
-  const OrderDetailScreen({super.key, this.orderId = 'LR-1029'});
+
+  const OrderDetailScreen({
+    super.key,
+    required this.orderId,
+  });
+
+  @override
+  State<OrderDetailScreen> createState() => _OrderDetailScreenState();
+}
+
+class _OrderDetailScreenState extends State<OrderDetailScreen> {
+  bool _isLoading = true;
+  String? _error;
+  Map<String, dynamic>? _orderDetail;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchOrderDetail();
+  }
+
+  Future<void> _fetchOrderDetail() async {
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+
+    try {
+      // 🟢 Gọi API lấy chi tiết đơn hàng theo ID
+      final data = await ApiService.getChiTietDonHang(widget.orderId);
+
+      if (!mounted) return;
+
+      setState(() {
+        _orderDetail = data;
+        _isLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = e.toString().replaceAll('Exception: ', '');
+        _isLoading = false;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
+    if (_isLoading) {
+      return Container(
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          color: AppColors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.grey[200]!),
+        ),
+        height: 300,
+        child: const Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    if (_error != null) {
+      return Container(
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          color: AppColors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.grey[200]!),
+        ),
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(_error!, style: const TextStyle(color: Colors.red)),
+              const SizedBox(height: 12),
+              ElevatedButton(
+                onPressed: _fetchOrderDetail,
+                child: const Text('Thử lại'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    // Lấy dữ liệu động từ API (fallback nếu không có)
+    final maDon = _orderDetail?['maDon'] ?? widget.orderId;
+    final thoiGianTao = _orderDetail?['thoiGianTao'] ?? 'N/A';
+    final trangThai = _orderDetail?['trangThai'] ?? 'ĐANG XỬ LÝ';
+    
+    final nguoiGui = _orderDetail?['nguoiGui'] ?? {};
+    final nguoiNhan = _orderDetail?['nguoiNhan'] ?? {};
+    
+    final khoiLuong = _orderDetail?['khoiLuong'] ?? '---';
+    final kichThuoc = _orderDetail?['kichThuoc'] ?? '---';
+    final tienCod = _orderDetail?['tienCod'] ?? '0 đ';
+    final phiVanChuyen = _orderDetail?['phiVanChuyen'] ?? '0 đ';
+
     return Container(
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
@@ -25,10 +120,14 @@ class OrderDetailScreen extends StatelessWidget {
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Chi tiết đơn hàng: $orderId',
-                        style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
-                    const Text('Thời gian tạo: 10:30 AM - 24/07/2026',
-                        style: TextStyle(color: AppColors.textSubtitle)),
+                    Text(
+                      'Chi tiết đơn hàng: $maDon',
+                      style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+                    ),
+                    Text(
+                      'Thời gian tạo: $thoiGianTao',
+                      style: const TextStyle(color: AppColors.textSubtitle),
+                    ),
                   ],
                 ),
                 Container(
@@ -37,8 +136,13 @@ class OrderDetailScreen extends StatelessWidget {
                     color: AppColors.statusOrange.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(20),
                   ),
-                  child: const Text('ĐANG GIAO HÀNG',
-                      style: TextStyle(color: AppColors.statusOrange, fontWeight: FontWeight.bold)),
+                  child: Text(
+                    trangThai.toString().toUpperCase(),
+                    style: const TextStyle(
+                      color: AppColors.statusOrange,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                 )
               ],
             ),
@@ -52,10 +156,10 @@ class OrderDetailScreen extends StatelessWidget {
               children: [
                 Expanded(
                   child: _buildInfoBox(
-                    title: 'Thông tin người gửi (BM01)',
-                    name: 'Nguyễn Văn A',
-                    phone: '0912 345 678',
-                    address: '123 Đường Lê Lợi, Phường Bến Nghé, Quận 1, TP.HCM',
+                    title: 'Thông tin người gửi',
+                    name: nguoiGui['hoTen'] ?? 'N/A',
+                    phone: nguoiGui['soDienThoai'] ?? 'N/A',
+                    address: nguoiGui['diaChi'] ?? _orderDetail?['diemLayHang'] ?? 'N/A',
                     icon: Icons.unarchive,
                   ),
                 ),
@@ -63,9 +167,9 @@ class OrderDetailScreen extends StatelessWidget {
                 Expanded(
                   child: _buildInfoBox(
                     title: 'Thông tin người nhận',
-                    name: 'Trần Thị B',
-                    phone: '0987 654 321',
-                    address: '456 Đường CMT8, Phường 11, Quận 3, TP.HCM',
+                    name: nguoiNhan['hoTen'] ?? 'N/A',
+                    phone: nguoiNhan['soDienThoai'] ?? 'N/A',
+                    address: nguoiNhan['diaChi'] ?? _orderDetail?['diemGiaoHang'] ?? 'N/A',
                     icon: Icons.archive,
                   ),
                 ),
@@ -83,10 +187,10 @@ class OrderDetailScreen extends StatelessWidget {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceAround,
                   children: [
-                    _buildMetric('Khối lượng', '2.5 kg'),
-                    _buildMetric('Kích thước', '30 x 20 x 10 cm'),
-                    _buildMetric('Tiền COD', '250,000 đ', isBold: true, color: AppColors.primaryRed),
-                    _buildMetric('Phí vận chuyển', '32,000 đ'),
+                    _buildMetric('Khối lượng', '$khoiLuong'),
+                    _buildMetric('Kích thước', '$kichThuoc'),
+                    _buildMetric('Tiền COD', '$tienCod', isBold: true, color: AppColors.primaryRed),
+                    _buildMetric('Phí vận chuyển', '$phiVanChuyen'),
                   ],
                 ),
               ),
@@ -122,7 +226,9 @@ class OrderDetailScreen extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           Text('Họ tên: $name', style: const TextStyle(fontWeight: FontWeight.w600)),
+          const SizedBox(height: 4),
           Text('SĐT: $phone'),
+          const SizedBox(height: 4),
           Text('Địa chỉ: $address'),
         ],
       ),

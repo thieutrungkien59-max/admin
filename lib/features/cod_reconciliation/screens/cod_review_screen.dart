@@ -28,7 +28,7 @@ class _CodReviewScreenState extends State<CodReviewScreen> {
     });
 
     try {
-      final List<dynamic> data = await ApiService.getDanhSachCod();
+      final List<dynamic> data = await ApiService.getDanhSachPhieuChoDuyet();
       setState(() {
         _codList = data.map((item) => CodModel.fromJson(item as Map<String, dynamic>)).toList();
         _isLoading = false;

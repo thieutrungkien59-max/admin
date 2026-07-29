@@ -16,14 +16,13 @@ class _OrderListScreenState extends State<OrderListScreen> {
   @override
   void initState() {
     super.initState();
-    // ✅ KÍCH HOẠT: Gọi API lấy dữ liệu ngay khi màn hình vừa mở lên
     _loadData();
   }
 
-  // Hàm để gọi lại API (dùng cho nút Tải lại)
+  // Hàm để gọi lại API
   void _loadData() {
     setState(() {
-      _futureDonHang = ApiService.getDanhSachDonHang();
+      _futureDonHang = ApiService.getDonHangChoNhan();
     });
   }
 

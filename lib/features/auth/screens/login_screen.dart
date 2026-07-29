@@ -1,5 +1,7 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:http/http.dart' as http;
 import '../../../core/constants/app_colors.dart';
 
 class AdminLoginScreen extends StatefulWidget {
@@ -25,23 +27,86 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
     super.dispose();
   }
 
+  // ===================================================================
+  // LOGIC ĐĂNG NHẬP
+  // ===================================================================
   void _handleLogin() async {
     if (!_formKey.currentState!.validate()) return;
 
     setState(() => _isLoading = true);
 
-    // TODO: Xử lý gọi API Đăng nhập
-    await Future.delayed(const Duration(seconds: 1));
+    final username = _usernameController.text.trim();
+    final password = _passwordController.text;
 
-    if (mounted) {
-      setState(() => _isLoading = false);
-      context.go('/dashboard');
+    try {
+      final isSuccess = await _checkLoginWithApi(username, password);
+
+      if (mounted) {
+        if (isSuccess) {
+          context.go('/dashboard');
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Tài khoản hoặc mật khẩu không chính xác!'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        // Lỗi kết nối mạng, Server sập hoặc sai URL
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Không thể kết nối đến máy chủ: $e'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
+  // ===================================================================
+  // HÀM GỌI API KIỂM TRA TÀI KHOẢN TRONG DATABASE
+  // ===================================================================
+  Future<bool> _checkLoginWithApi(String username, String password) async {
+    final url = Uri.parse('https://startle-kilogram-greeting.ngrok-free.dev/api/Auth/login');
+
+    final response = await http.post(
+      url,
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+      // 💡 2. THAY ĐỔI KEY VỚI ĐÚNG FORMAT BACKEND YÊU CẦU (ví dụ: 'email' thay vì 'username')
+      body: jsonEncode({
+        'username': username,
+        'password': password,
+      }),
+    );
+
+    // KIỂM TRA STATUS CODE TRẢ VỀ TỪ SERVER
+    if (response.statusCode == 200 || response.statusCode == 201) {
+      // Đăng nhập thành công, tài khoản khớp với DB
+      return true;
+    } else if (response.statusCode == 401 || response.statusCode == 400 || response.statusCode == 404) {
+      // Sai pass hoặc tài khoản không tồn tại trong DB
+      return false;
+    } else {
+      throw Exception('Lỗi Server (${response.statusCode})');
+    }
+  }
+
+  // ===================================================================
+  // PHẦN GIAO DIỆN (UI)
+  // ===================================================================
   @override
   Widget build(BuildContext context) {
-    final primaryRedColor = AppColors.primaryRed; // Màu đỏ LogiRoute
+    final primaryRedColor = AppColors.primaryRed;
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -64,27 +129,23 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
 
           return Row(
             children: [
-              // ===================================================================
-              // CỘT TRÁI: BANNER ĐỎ & THÔNG TIN LOGIROUTE (50% màn hình)
-              // ===================================================================
+              // Cột bên trái: Banner thương hiệu
               Expanded(
                 flex: 5,
                 child: Container(
                   decoration: BoxDecoration(
-                    color: primaryRedColor, 
-                    image: DecorationImage(
+                    color: primaryRedColor,
+                    image: const DecorationImage(
                       image: AssetImage('assets/images/login_illustration.png'),
                       fit: BoxFit.cover,
                     ),
                   ),
                   child: Container(
-                    // Lớp phủ đỏ trong suốt giống hình mẫu
                     color: const Color(0xFFC62828).withValues(alpha: 0.85),
                     padding: const EdgeInsets.all(48.0),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // Top Logo Header
                         Row(
                           children: [
                             Container(
@@ -110,10 +171,7 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
                             ),
                           ],
                         ),
-
                         const Spacer(),
-
-                        // Title & Subtitle ở giữa
                         const Text(
                           'Tối ưu hóa hành trình vận tải\nnội đô',
                           style: TextStyle(
@@ -132,10 +190,7 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
                             height: 1.4,
                           ),
                         ),
-
                         const Spacer(),
-
-                        // Bottom Status Indicators
                         Row(
                           children: [
                             Row(
@@ -185,9 +240,7 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
                 ),
               ),
 
-              // ===================================================================
-              // CỘT PHẢI: FORM ĐĂNG NHẬP (50% màn hình)
-              // ===================================================================
+              // Cột bên phải: Form đăng nhập
               Expanded(
                 flex: 5,
                 child: Center(
@@ -207,7 +260,6 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
     );
   }
 
-  // Widget Form đăng nhập bên phải
   Widget _buildRightForm(
     BuildContext context, {
     required double width,
@@ -226,7 +278,6 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Header Form
             const Text(
               'Đăng nhập LogiRoute',
               style: TextStyle(
@@ -242,7 +293,7 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
             ),
             const SizedBox(height: 36),
 
-            // Field 1: Tài khoản
+            // Ô nhập tài khoản
             const Text(
               'Tài khoản (Email/Username)',
               style: TextStyle(
@@ -281,7 +332,7 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
             ),
             const SizedBox(height: 20),
 
-            // Field 2: Mật khẩu (Label + Link Quên mật khẩu nằm chung hàng)
+            // Ô nhập mật khẩu
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -343,7 +394,7 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
             ),
             const SizedBox(height: 16),
 
-            // Checkbox: Ghi nhớ phiên đăng nhập
+            // Checkbox Ghi nhớ
             Row(
               children: [
                 SizedBox(
@@ -369,7 +420,7 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
             ),
             const SizedBox(height: 28),
 
-            // Nút Đăng nhập Red
+            // Nút bấm Đăng nhập
             SizedBox(
               width: double.infinity,
               height: 46,
@@ -403,7 +454,7 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
             ),
             const SizedBox(height: 36),
 
-            // Chú thích bảo mật
+            // Chú thích & Footer
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: const [
@@ -422,8 +473,6 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
               ],
             ),
             const SizedBox(height: 28),
-
-            // Footer Phiên bản
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: const [

@@ -25,7 +25,7 @@ class WarningNoteCard extends StatelessWidget {
           SizedBox(height: 16),
           Text('• Thiết lập giờ cao điểm sẽ tự động thông báo cho toàn bộ hệ thống Shipper qua ứng dụng di động.', style: TextStyle(height: 1.5)),
           SizedBox(height: 8),
-          Text('• Phụ phí không áp dụng cho các đơn hàng có hợp đồng cố định (Corporate Partners).', style: TextStyle(height: 1.5)),
+          Text('• Phụ phí không áp dụng cho các đơn hàng có hợp đồng cố định.', style: TextStyle(height: 1.5)),
           SizedBox(height: 8),
           Text('• Nên tránh thiết lập hệ số vượt quá 2.5x trong các điều kiện bình thường để đảm bảo tính cạnh tranh.', style: TextStyle(height: 1.5)),
         ],

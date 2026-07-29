@@ -35,7 +35,7 @@ class _DispatchCenterScreenState extends State<DispatchCenterScreen> {
 
     try {
       final results = await Future.wait([
-        ApiService.getDanhSachDonHang(),
+        ApiService.getDonHangChoNhan(),
         ApiService.getDanhSachShipper(),
       ]);
 
