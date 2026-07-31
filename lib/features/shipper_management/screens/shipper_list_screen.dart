@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:admin/models/shipper_model.dart';
 import 'package:admin/services/api_service.dart';
+import 'package:admin/features/shipper_management/screens/approve_shipper_screen.dart'; 
 
 class ShipperListScreen extends StatefulWidget {
   const ShipperListScreen({super.key});
@@ -14,12 +15,22 @@ class _ShipperListScreenState extends State<ShipperListScreen> {
   List<ShipperModel> _shippers = [];
   bool _isLoading = true;
   String? _error;
+
+  // Bộ lọc & Tìm kiếm
   String _filterStatus = 'ALL';
+  String _searchQuery = '';
+  final TextEditingController _searchController = TextEditingController();
 
   @override
   void initState() {
     super.initState();
     _fetchShippers();
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 
   Future<void> _fetchShippers() async {
@@ -30,11 +41,16 @@ class _ShipperListScreenState extends State<ShipperListScreen> {
 
     try {
       final List<dynamic> raw = await ApiService.getDanhSachShipper();
+      if (!mounted) return;
+
       setState(() {
-        _shippers = raw.map((item) => ShipperModel.fromJson(item as Map<String, dynamic>)).toList();
+        _shippers = raw
+            .map((item) => ShipperModel.fromJson(item as Map<String, dynamic>))
+            .toList();
         _isLoading = false;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _error = e.toString().replaceAll('Exception: ', '');
         _isLoading = false;
@@ -44,11 +60,30 @@ class _ShipperListScreenState extends State<ShipperListScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Lọc danh sách theo Tab / Dropdown và Từ khóa tìm kiếm
     final filteredShippers = _shippers.where((s) {
-      if (_filterStatus == 'ONLINE') return s.isOnline;
-      if (_filterStatus == 'OFFLINE') return !s.isOnline;
-      return true;
+      bool matchesStatus = true;
+      if (_filterStatus == 'ChoDuyet') {
+        matchesStatus = s.trangThaiDuyet == 'ChoDuyet';
+      } else if (_filterStatus == 'TuChoi') {
+        matchesStatus = s.trangThaiDuyet == 'TuChoi';
+      } else if (_filterStatus == 'TrucTuyen') {
+        matchesStatus = s.isOnline && s.trangThaiDuyet == 'DaDuyet';
+      } else if (_filterStatus == 'NgoaiTuyen') {
+        matchesStatus = !s.isOnline && s.trangThaiDuyet == 'DaDuyet';
+      }
+
+      final query = _searchQuery.toLowerCase().trim();
+      bool matchesSearch = query.isEmpty ||
+          s.hoTen.toLowerCase().contains(query) ||
+          s.soDienThoai.toLowerCase().contains(query) ||
+          s.bienSo.toLowerCase().contains(query);
+
+      return matchesStatus && matchesSearch;
     }).toList();
+
+    final int pendingCount =
+        _shippers.where((s) => s.trangThaiDuyet == 'ChoDuyet').length;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF9F6F0),
@@ -57,127 +92,367 @@ class _ShipperListScreenState extends State<ShipperListScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('Quản lý Đội ngũ Shipper', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-                    Text('Tổng số tài xế: ${_shippers.length}', style: const TextStyle(color: Colors.grey, fontSize: 13)),
-                  ],
-                ),
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Colors.grey.shade300),
-                      ),
-                      child: DropdownButtonHideUnderline(
-                        child: DropdownButton<String>(
-                          value: _filterStatus,
-                          items: const [
-                            DropdownMenuItem(value: 'ALL', child: Text('Tất cả trạng thái')),
-                            DropdownMenuItem(value: 'ONLINE', child: Text('Đang Online')),
-                            DropdownMenuItem(value: 'OFFLINE', child: Text('Đang Offline')),
-                          ],
-                          onChanged: (val) {
-                            if (val != null) setState(() => _filterStatus = val);
-                          },
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    IconButton(
-                      icon: const Icon(Icons.refresh),
-                      tooltip: 'Tải lại',
-                      onPressed: _fetchShippers,
-                    ),
-                  ],
-                )
-              ],
-            ),
+            _buildHeader(pendingCount),
+            const SizedBox(height: 12),
+            _buildSearchBarAndFilter(pendingCount),
             const SizedBox(height: 16),
             Expanded(
-              child: _isLoading
-                  ? Center(child: CircularProgressIndicator(color: primaryRed))
-                  : _error != null
-                      ? Center(
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              const Icon(Icons.error_outline, color: Colors.red, size: 40),
-                              const SizedBox(height: 8),
-                              Text(_error!, style: const TextStyle(color: Colors.red)),
-                              const SizedBox(height: 12),
-                              ElevatedButton(
-                                style: ElevatedButton.styleFrom(backgroundColor: primaryRed, foregroundColor: Colors.white),
-                                onPressed: _fetchShippers,
-                                child: const Text('Thử lại'),
-                              ),
-                            ],
-                          ),
-                        )
-                      : filteredShippers.isEmpty
-                          ? const Center(child: Text('Không tìm thấy tài xế nào'))
-                          : ListView.builder(
-                              itemCount: filteredShippers.length,
-                              itemBuilder: (context, index) {
-                                final shipper = filteredShippers[index];
-                                return Card(
-                                  elevation: 1,
-                                  margin: const EdgeInsets.only(bottom: 10),
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                                  child: ListTile(
-                                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                                    leading: CircleAvatar(
-                                      radius: 24,
-                                      backgroundColor: shipper.isOnline ? Colors.green.shade100 : Colors.grey.shade300,
-                                      child: Icon(Icons.person, color: shipper.isOnline ? Colors.green.shade800 : Colors.grey.shade600),
-                                    ),
-                                    title: Text(shipper.hoTen, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-                                    subtitle: Padding(
-                                      padding: const EdgeInsets.only(top: 4),
-                                      child: Text('Biển số: ${shipper.bienSo} | SĐT: ${shipper.soDienThoai}', style: const TextStyle(fontSize: 12)),
-                                    ),
-                                    trailing: Column(
-                                      mainAxisAlignment: MainAxisAlignment.center,
-                                      crossAxisAlignment: CrossAxisAlignment.end,
-                                      children: [
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                          decoration: BoxDecoration(
-                                            color: shipper.isOnline ? Colors.green.shade50 : Colors.red.shade50,
-                                            borderRadius: BorderRadius.circular(6),
-                                            border: Border.all(color: shipper.isOnline ? Colors.green.shade200 : Colors.red.shade200),
-                                          ),
-                                          child: Text(
-                                            shipper.isOnline ? 'ONLINE' : 'OFFLINE',
-                                            style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: shipper.isOnline ? Colors.green.shade700 : Colors.red.shade700),
-                                          ),
-                                        ),
-                                        const SizedBox(height: 6),
-                                        Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            Icon(Icons.star, size: 13, color: Colors.amber.shade700),
-                                            const SizedBox(width: 2),
-                                            Text('${shipper.danhGia} (${shipper.soDonDaGiao} đơn)', style: const TextStyle(fontSize: 11, color: Colors.grey)),
-                                          ],
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                );
-                              },
-                            ),
+              child: _buildBodyList(filteredShippers),
             ),
           ],
         ),
       ),
     );
+  }
+
+  // --- WIDGET THÀNH PHẦN ---
+
+  Widget _buildHeader(int pendingCount) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Quản lý Đội ngũ Shipper',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                Text(
+                  'Tổng số tài xế: ${_shippers.length}',
+                  style: const TextStyle(
+                    color: Colors.grey,
+                    fontSize: 13,
+                  ),
+                ),
+                if (pendingCount > 0) ...[
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.shade100,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      '$pendingCount hồ sơ chờ duyệt',
+                      style: TextStyle(
+                        color: Colors.orange.shade900,
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ],
+        ),
+        IconButton(
+          icon: const Icon(Icons.refresh),
+          tooltip: 'Tải lại',
+          onPressed: _fetchShippers,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSearchBarAndFilter(int pendingCount) {
+    return Row(
+      children: [
+        Expanded(
+          child: Container(
+            height: 42,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.grey.shade300),
+            ),
+            child: TextField(
+              controller: _searchController,
+              onChanged: (val) => setState(() => _searchQuery = val),
+              decoration: InputDecoration(
+                hintText: 'Tìm theo tên, SĐT, biển số...',
+                hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 13),
+                prefixIcon: const Icon(Icons.search, size: 20, color: Colors.grey),
+                suffixIcon: _searchQuery.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.clear, size: 18),
+                        onPressed: () {
+                          _searchController.clear();
+                          setState(() => _searchQuery = '');
+                        },
+                      )
+                    : null,
+                border: InputBorder.none,
+                contentPadding: const EdgeInsets.symmetric(vertical: 10),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Container(
+          height: 42,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: Colors.grey.shade300),
+          ),
+          child: DropdownButtonHideUnderline(
+            child: DropdownButton<String>(
+              value: _filterStatus,
+              items: [
+                const DropdownMenuItem(
+                  value: 'ALL',
+                  child: Text('Tất cả trạng thái'),
+                ),
+                DropdownMenuItem(
+                  value: 'ChoDuyet',
+                  child: Text('Chờ duyệt ($pendingCount)'),
+                ),
+                const DropdownMenuItem(
+                  value: 'TrucTuyen',
+                  child: Text('Đang Online'),
+                ),
+                const DropdownMenuItem(
+                  value: 'NgoaiTuyen',
+                  child: Text('Đang Offline'),
+                ),
+                const DropdownMenuItem(
+                  value: 'TuChoi',
+                  child: Text('Đã từ chối'),
+                ),
+              ],
+              onChanged: (val) {
+                if (val != null) {
+                  setState(() => _filterStatus = val);
+                }
+              },
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildBodyList(List<ShipperModel> filteredShippers) {
+    if (_isLoading) {
+      return Center(
+        child: CircularProgressIndicator(color: primaryRed),
+      );
+    }
+
+    if (_error != null) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.error_outline, color: Colors.red, size: 40),
+            const SizedBox(height: 8),
+            Text(_error!, style: const TextStyle(color: Colors.red)),
+            const SizedBox(height: 12),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: primaryRed,
+                foregroundColor: Colors.white,
+              ),
+              onPressed: _fetchShippers,
+              child: const Text('Thử lại'),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (filteredShippers.isEmpty) {
+      return const Center(
+        child: Text(
+          'Không tìm thấy tài xế nào',
+          style: TextStyle(color: Colors.grey),
+        ),
+      );
+    }
+
+    return ListView.builder(
+      itemCount: filteredShippers.length,
+      itemBuilder: (context, index) {
+        return _buildShipperCard(filteredShippers[index]);
+      },
+    );
+  }
+
+  Widget _buildShipperCard(ShipperModel shipper) {
+
+    final bool isPending = shipper.trangThaiDuyet == 'ChoDuyet';
+
+    return Card(
+      elevation: 1,
+      margin: const EdgeInsets.only(bottom: 10),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Row(
+          children: [
+            // Avatar
+            CircleAvatar(
+              radius: 24,
+              backgroundColor: _getAvatarBgColor(shipper),
+              child: Icon(
+                Icons.person,
+                color: _getAvatarIconColor(shipper),
+              ),
+            ),
+            const SizedBox(width: 16),
+
+            // Thông tin Shipper (Ưu tiên Badge trạng thái hiển thị rõ ràng lên đầu)
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Ưu tiên hiển thị Badge trạng thái hồ sơ trước
+                  _buildStatusBadge(shipper),
+                  const SizedBox(height: 6),
+                  Text(
+                    shipper.hoTen,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Biển số: ${shipper.bienSo} | SĐT: ${shipper.soDienThoai}',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            // Nút điều hướng hoặc thông tin phụ
+            if (isPending)
+              ElevatedButton.icon(
+                onPressed: () async { 
+                   await Navigator.push(
+                     context,
+                     MaterialPageRoute(
+                       builder: (context) => ApproveShipperScreen(shipperId: shipper.id),
+                     ),
+                   );
+                   _fetchShippers(); // Tải lại danh sách sau khi quay lại nếu cần
+                },
+                icon: const Icon(Icons.rate_review, size: 16),
+                label: const Text('Duyệt hồ sơ'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: primaryRed,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  textStyle: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              )
+            else
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.star,
+                    size: 14,
+                    color: Colors.amber.shade700,
+                  ),
+                  const SizedBox(width: 2),
+                  Text(
+                    '${shipper.danhGia} (${shipper.soDonDaGiao} đơn)',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey,
+                    ),
+                  ),
+                ],
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // --- HELPER STYLES & BADGES ---
+
+  Widget _buildStatusBadge(ShipperModel shipper) {
+    String label = '';
+    Color bgColor = Colors.grey.shade100;
+    Color textColor = Colors.grey.shade700;
+    Color borderColor = Colors.grey.shade300;
+
+    if (shipper.trangThaiDuyet == 'ChoDuyet') {
+      label = 'CHỜ DUYỆT HỒ SƠ';
+      bgColor = Colors.orange.shade50;
+      textColor = Colors.orange.shade800;
+      borderColor = Colors.orange.shade200;
+    } else if (shipper.trangThaiDuyet == 'TuChoi') {
+      label = 'ĐÃ TỪ CHỐI';
+      bgColor = Colors.red.shade50;
+      textColor = Colors.red.shade800;
+      borderColor = Colors.red.shade200;
+    } else {
+      if (shipper.isOnline) {
+        label = 'Đang trực tuyến';
+        bgColor = Colors.green.shade50;
+        textColor = Colors.green.shade700;
+        borderColor = Colors.green.shade200;
+      } else {
+        label = 'Đang ngoại tuyến';
+        bgColor = Colors.grey.shade100;
+        textColor = Colors.grey.shade700;
+        borderColor = Colors.grey.shade300;
+      }
+    }
+
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+          color: bgColor,
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: borderColor),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 10,
+            fontWeight: FontWeight.bold,
+            color: textColor,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Color _getAvatarBgColor(ShipperModel shipper) {
+    if (shipper.trangThaiDuyet == 'ChoDuyet') return Colors.orange.shade100;
+    if (shipper.trangThaiDuyet == 'TuChoi') return Colors.red.shade100;
+    return shipper.isOnline ? Colors.green.shade100 : Colors.grey.shade300;
+  }
+
+  Color _getAvatarIconColor(ShipperModel shipper) {
+    if (shipper.trangThaiDuyet == 'ChoDuyet') return Colors.orange.shade800;
+    if (shipper.trangThaiDuyet == 'TuChoi') return Colors.red.shade800;
+    return shipper.isOnline ? Colors.green.shade800 : Colors.grey.shade600;
   }
 }

@@ -1,40 +1,48 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
-import 'package:url_launcher/url_launcher.dart';
-import '../../../core/constants/app_colors.dart';
 import 'package:admin/models/don_hang_model.dart';
 import 'package:admin/models/shipper_model.dart';
 import 'package:admin/services/api_service.dart';
 
 class DashboardScreen extends StatefulWidget {
-  const DashboardScreen({super.key});
+  const DashboardScreen({Key? key}) : super(key: key);
 
   @override
   State<DashboardScreen> createState() => _DashboardScreenState();
 }
 
 class _DashboardScreenState extends State<DashboardScreen> {
-  final MapController _mapController = MapController();
-  static const LatLng _centerLocation = LatLng(10.7769, 106.7009);
-
-  List<Marker> _markers = [];
   bool _isLoading = true;
   String? _error;
 
-  // Biến lưu trữ số liệu từ API
-  int _pendingOrdersCount = 0;
-  int _shippingOrdersCount = 0;
-  int _onlineShippersCount = 0;
-  int _codWarningsCount = 0;
-
-  //lưu lại danh sách đơn chờ để làm data cho Dropdown phân đơn
+  List<Marker> _markers = [];
   List<DonHangModel> _pendingOrders = [];
+  int _pendingOrdersCount = 0;
+  int _onlineShippersCount = 0;
+  int _shippingOrdersCount = 0;
+  int _codWarningsCount = 0;
 
   @override
   void initState() {
     super.initState();
     _loadDashboardData();
+  }
+
+  /// Hàm phụ trợ bóc tách mảng an toàn từ dữ liệu API
+  /// Tránh lỗi: TypeError: 0: type 'int' is not a subtype of type 'String' trên Web
+  List<dynamic> _extractList(dynamic data) {
+    if (data is List) {
+      return data;
+    } else if (data is Map<String, dynamic>) {
+      if (data.containsKey('danhSach') && data['danhSach'] is List) {
+        return data['danhSach'] as List<dynamic>;
+      }
+      if (data.containsKey('data') && data['data'] is List) {
+        return data['data'] as List<dynamic>;
+      }
+    }
+    return [];
   }
 
   Future<void> _loadDashboardData() async {
@@ -54,16 +62,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
       if (!mounted) return;
 
-      final orders = (results[0] as List)
+      // Bóc tách mảng an toàn trước khi chuyển đổi Model
+      final rawOrders = _extractList(results[0]);
+      final orders = rawOrders
           .map((json) => DonHangModel.fromJson(json as Map<String, dynamic>))
           .toList();
 
-      final shippers = (results[1] as List)
+      final rawShippers = _extractList(results[1]);
+      final shippers = rawShippers
           .map((json) => ShipperModel.fromJson(json as Map<String, dynamic>))
           .toList();
 
-      final int shippingCount = results[2] as int;
-      final int codWarningCount = results[3] as int;
+      final int shippingCount = results[2] is int ? results[2] as int : 0;
+      final int codWarningCount = results[3] is int ? results[3] as int : 0;
 
       final List<Marker> generatedMarkers = [];
 
@@ -120,7 +131,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
       setState(() {
         _markers = generatedMarkers;
-        _pendingOrders = orders; // Lưu danh sách đơn chờ cho Dropdown
+        _pendingOrders = orders;
         _pendingOrdersCount = orders.length;
         _onlineShippersCount = shippers.where((s) => s.isOnline).length;
         _shippingOrdersCount = shippingCount;
@@ -139,12 +150,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
   void _showDetailDialog({required String title, required String content}) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+      builder: (ctx) => AlertDialog(
+        title: Text(title),
         content: Text(content),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.of(ctx).pop(),
             child: const Text('Đóng'),
           ),
         ],
@@ -155,336 +166,127 @@ class _DashboardScreenState extends State<DashboardScreen> {
   void _showShipperActionSheet(ShipperModel shipper) {
     showModalBottomSheet(
       context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (context) {
-        return Padding(
-          padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  CircleAvatar(
-                    radius: 25,
-                    backgroundColor: Colors.blue.withValues(alpha: 0.2),
-                    child: const Icon(Icons.person, color: Colors.blue, size: 30),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          shipper.hoTen,
-                          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                        ),
-                        Text(
-                          'Biển số: ${shipper.bienSo}',
-                          style: TextStyle(color: Colors.grey[700]),
-                        ),
-                        Row(
-                          children: [
-                            Container(
-                              width: 10,
-                              height: 10,
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                color: shipper.isOnline ? Colors.green : Colors.grey,
-                              ),
-                            ),
-                            const SizedBox(width: 6),
-                            Text(
-                              shipper.isOnline ? 'Đang hoạt động' : 'Ngoại tuyến',
-                              style: TextStyle(
-                                  color: shipper.isOnline ? Colors.green : Colors.grey,
-                                  fontWeight: FontWeight.w500),
-                            ),
-                          ],
-                        )
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-              const Divider(height: 30),
-
-              // Nút Phân đơn
-              ListTile(
-                leading: const Icon(Icons.assignment_ind, color: Colors.blue),
-                title: const Text('Phân đơn cho tài xế này'),
-                enabled: shipper.isOnline,
-                onTap: () {
-                  Navigator.pop(context);
-                  _phanDonChoShipper(shipper);
-                },
-              ),
-
-              // Nút Gọi điện
-              ListTile(
-                leading: const Icon(Icons.phone, color: Colors.green),
-                title: const Text('Gọi điện liên hệ'),
-                onTap: () async {
-                  Navigator.pop(context);
-
-                  final Uri callUri = Uri.parse('tel:${shipper.soDienThoai}');
-
-                  try {
-                    if (await canLaunchUrl(callUri)) {
-                      await launchUrl(callUri);
-                    } else {
-                      // khi máy ko có SIM thì thông báo lỗi
-                      if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Thiết bị của bạn không hỗ trợ gọi điện!')),
-                        );
-                      }
-                    }
-                  } catch (e) {
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Lỗi khi mở trình gọi điện: $e')),
-                      );
-                    }
-                  }
-                },
-              ),
-
-              // 4. Nút Ép ngoại tuyến
-              ListTile(
-                leading: const Icon(Icons.power_settings_new, color: Colors.red),
-                title: const Text('Ép tài xế ngoại tuyến', style: TextStyle(color: Colors.red)),
-                enabled: shipper.isOnline,
-                onTap: () {
-                  Navigator.pop(context);
-                  _xacNhanEpNgoaiTuyen(shipper);
-                },
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  void _phanDonChoShipper(ShipperModel shipper) {
-    if (_pendingOrders.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Hiện không có đơn hàng nào đang chờ phân!')),
-      );
-      return;
-    }
-
-    String? selectedMaDon;
-
-    showDialog(
-      context: context,
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setStateDialog) {
-            return AlertDialog(
-              title: Text('Phân đơn cho ${shipper.hoTen}'),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('Vui lòng chọn đơn hàng cần giao:'),
-                  const SizedBox(height: 12),
-                  DropdownButtonFormField<String>(
-                    decoration: InputDecoration(
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    ),
-                    hint: const Text('Chọn mã đơn hàng...'),
-                    value: selectedMaDon,
-                    items: _pendingOrders.map((order) {
-                      return DropdownMenuItem<String>(
-                        value: order.maDon,
-                        child: Text('${order.maDon} - ${order.isUrgent ? "(Gấp)" : ""}'),
-                      );
-                    }).toList(),
-                    onChanged: (value) {
-                      setStateDialog(() {
-                        selectedMaDon = value;
-                      });
-                    },
-                  ),
-                ],
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('Hủy', style: TextStyle(color: Colors.grey)),
-                ),
+      builder: (ctx) => Container(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Shipper: ${shipper.hoTen}',
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            Text('Biển số: ${shipper.bienSo}'),
+            Text('Trạng thái: ${shipper.isOnline ? "Hoạt động (Online)" : "Nghỉ (Offline)"}'),
+            const SizedBox(height: 16),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
                 ElevatedButton(
-                  style: ElevatedButton.styleFrom(backgroundColor: Colors.blue),
-                  onPressed: selectedMaDon == null
-                      ? null
-                      : () async {
-                          Navigator.pop(context);
-                          
-                          // gọi ApiService để phân đơn
-                          await ApiService.phanDon(selectedMaDon!, shipper.id);
-                          
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text('Đã phân đơn $selectedMaDon cho ${shipper.hoTen}')),
-                          );
-                          
-                          _loadDashboardData(); 
-                        },
-                  child: const Text('Xác nhận', style: TextStyle(color: Colors.white)),
+                  onPressed: () => Navigator.of(ctx).pop(),
+                  child: const Text('Đóng'),
                 ),
               ],
-            );
-          },
-        );
-      },
-    );
-  }
-
-  void _xacNhanEpNgoaiTuyen(ShipperModel shipper) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Cảnh báo'),
-        content: Text('Bạn có chắc chắn muốn ép tài xế ${shipper.hoTen} ngoại tuyến không?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Hủy'),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            onPressed: () async {
-              Navigator.pop(context); 
-              
-              // TODO: Chỗ này gọi API set offline
-              // await ApiService.forceOffline(shipper.id);
-              
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('Đã chuyển ${shipper.hoTen} sang ngoại tuyến')),
-              );
-              _loadDashboardData(); // Cập nhật lại bản đồ
-            },
-            child: const Text('Xác nhận', style: TextStyle(color: Colors.white)),
-          ),
-        ],
+            ),
+          ],
+        ),
       ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // Tiêu đề & nút Tải lại
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            const Text(
-              'Tổng quan vận hành hôm nay',
-              style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-            ),
-            IconButton(
-              icon: const Icon(Icons.refresh),
-              tooltip: 'Tải lại bản đồ & số liệu',
-              onPressed: _loadDashboardData,
-            ),
-          ],
-        ),
-        const SizedBox(height: 20),
-
-        // Thẻ thống kê
-        Row(
-          children: [
-            _buildStatCard('Tổng đơn chờ', _isLoading ? '...' : '$_pendingOrdersCount', Icons.inventory_2, Colors.blue),
-            const SizedBox(width: 20),
-            _buildStatCard('Đang giao', _isLoading ? '...' : '$_shippingOrdersCount', Icons.local_shipping, AppColors.statusOrange),
-            const SizedBox(width: 20),
-            _buildStatCard('Tài xế Online', _isLoading ? '...' : '$_onlineShippersCount', Icons.motorcycle, AppColors.statusGreen),
-            const SizedBox(width: 20),
-            _buildStatCard('Cảnh báo COD', _isLoading ? '...' : '$_codWarningsCount', Icons.warning_amber_rounded, AppColors.statusRed),
-          ],
-        ),
-        const SizedBox(height: 30),
-
-        // Khung hiển thị Bản đồ
-        Expanded(
-          child: Container(
-            clipBehavior: Clip.antiAlias,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.grey[200]!),
-            ),
-            child: _isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : _error != null
-                    ? Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Text(_error!, style: const TextStyle(color: Colors.red)),
-                            const SizedBox(height: 8),
-                            ElevatedButton(
-                              onPressed: _loadDashboardData,
-                              child: const Text('Thử lại'),
-                            ),
-                          ],
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Dashboard Quản Lý'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: _loadDashboardData,
+            tooltip: 'Tải lại dữ liệu',
+          ),
+        ],
+      ),
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : _error != null
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(Icons.error_outline, color: Colors.red, size: 48),
+                        const SizedBox(height: 12),
+                        Text(
+                          'Đã xảy ra lỗi: $_error',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(color: Colors.red),
                         ),
-                      )
-                    : FlutterMap(
-                        mapController: _mapController,
+                        const SizedBox(height: 16),
+                        ElevatedButton(
+                          onPressed: _loadDashboardData,
+                          child: const Text('Thử lại'),
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+              : Column(
+                  children: [
+                    // Các ô thống kê nhanh
+                    Padding(
+                      padding: const EdgeInsets.all(8.0),
+                      child: Row(
+                        children: [
+                          _buildStatCard('Đơn chờ', '$_pendingOrdersCount', Colors.orange),
+                          _buildStatCard('Đang giao', '$_shippingOrdersCount', Colors.blue),
+                          _buildStatCard('Shipper', '$_onlineShippersCount', Colors.green),
+                          _buildStatCard('Cảnh báo COD', '$_codWarningsCount', Colors.red),
+                        ],
+                      ),
+                    ),
+                    // Bản đồ khu vực
+                    Expanded(
+                      child: FlutterMap(
                         options: const MapOptions(
-                          initialCenter: _centerLocation,
-                          initialZoom: 13.5,
+                          initialCenter: LatLng(10.7769, 106.7009), // TP.HCM
+                          initialZoom: 13.0,
                         ),
                         children: [
                           TileLayer(
                             urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                            userAgentPackageName: 'com.admin.lougiroute',
+                            userAgentPackageName: 'com.example.app',
                           ),
-                          MarkerLayer(
-                            markers: _markers,
-                          ),
+                          MarkerLayer(markers: _markers),
                         ],
                       ),
-          ),
-        ),
-      ],
+                    ),
+                  ],
+                ),
     );
   }
 
-  Widget _buildStatCard(String title, String value, IconData icon, Color color) {
+  Widget _buildStatCard(String title, String value, Color color) {
     return Expanded(
-      child: Container(
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.grey[200]!),
-        ),
-        child: Row(
-          children: [
-            CircleAvatar(
-              radius: 24,
-              backgroundColor: color.withValues(alpha: 0.1),
-              child: Icon(icon, color: color, size: 28),
-            ),
-            const SizedBox(width: 16),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(title, style: const TextStyle(color: AppColors.textSubtitle, fontSize: 14)),
-                Text(value, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
-              ],
-            )
-          ],
+      child: Card(
+        elevation: 2,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 12.0, horizontal: 8.0),
+          child: Column(
+            children: [
+              Text(
+                title,
+                style: TextStyle(fontSize: 12, color: Colors.grey[700]),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                value,
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: color),
+              ),
+            ],
+          ),
         ),
       ),
     );

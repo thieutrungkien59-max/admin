@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../../core/constants/app_colors.dart';
 
 class AdminLoginScreen extends StatefulWidget {
@@ -21,10 +22,46 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
   bool _isLoading = false;
 
   @override
+  void initState() {
+    super.initState();
+    _loadSavedLoginInfo();
+  }
+
+  @override
   void dispose() {
     _usernameController.dispose();
     _passwordController.dispose();
     super.dispose();
+  }  
+  /// Tải thông tin ghi nhớ từ bộ nhớ thiết bị
+  Future<void> _loadSavedLoginInfo() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final isRemembered = prefs.getBool('remember_me') ?? false;
+
+      if (isRemembered) {
+        final savedUsername = prefs.getString('saved_username') ?? '';
+        setState(() {
+          _rememberMe = true;
+          _usernameController.text = savedUsername;
+        });
+      }
+    } catch (e) {
+      debugPrint('Lỗi không tìm thấy tài khoản đã lưu: $e');
+    }
+  }
+
+  /// Lưu hoặc xóa thông tin tài khoản dựa theo trạng thái Checkbox
+  Future<void> _saveOrClearSession(String username) async {
+    final prefs = await SharedPreferences.getInstance();
+
+    if (_rememberMe) {
+      await prefs.setBool('remember_me', true);
+      await prefs.setString('saved_username', username);
+    } else {
+      await prefs.remove('remember_me');
+      await prefs.remove('saved_username');
+    }
   }
 
   // ===================================================================
@@ -43,7 +80,11 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
 
       if (mounted) {
         if (isSuccess) {
-          context.go('/dashboard');
+          await _saveOrClearSession(username);
+
+          if (mounted) {
+            context.go('/dashboard');
+          }
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -82,7 +123,6 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
       },
-      // 💡 2. THAY ĐỔI KEY VỚI ĐÚNG FORMAT BACKEND YÊU CẦU (ví dụ: 'email' thay vì 'username')
       body: jsonEncode({
         'username': username,
         'password': password,
@@ -91,10 +131,8 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
 
     // KIỂM TRA STATUS CODE TRẢ VỀ TỪ SERVER
     if (response.statusCode == 200 || response.statusCode == 201) {
-      // Đăng nhập thành công, tài khoản khớp với DB
       return true;
     } else if (response.statusCode == 401 || response.statusCode == 400 || response.statusCode == 404) {
-      // Sai pass hoặc tài khoản không tồn tại trong DB
       return false;
     } else {
       throw Exception('Lỗi Server (${response.statusCode})');
@@ -129,7 +167,6 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
 
           return Row(
             children: [
-              // Cột bên trái: Banner thương hiệu
               Expanded(
                 flex: 5,
                 child: Container(
@@ -344,17 +381,6 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
                     color: Color(0xFF1E293B),
                   ),
                 ),
-                GestureDetector(
-                  onTap: () {},
-                  child: Text(
-                    'Quên mật khẩu?',
-                    style: TextStyle(
-                      color: redColor,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 13,
-                    ),
-                  ),
-                ),
               ],
             ),
             const SizedBox(height: 8),
@@ -394,7 +420,7 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
             ),
             const SizedBox(height: 16),
 
-            // Checkbox Ghi nhớ
+            // Checkbox Ghi nhớ phiên đăng nhập
             Row(
               children: [
                 SizedBox(

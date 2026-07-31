@@ -83,8 +83,11 @@ final GoRouter _router = GoRouter(
 
         // Trang Duyệt hồ sơ Tài xế mới
         GoRoute(
-          path: '/approve_shipper',
-          builder: (context, state) => const ApproveShipperScreen(),
+          path: '/approve_shipper/:shipperId',
+          builder: (context, state) {
+            final shipperId = state.pathParameters['shipperId'] ?? '';
+            return ApproveShipperScreen(shipperId: shipperId);
+          },
         ),
 
         // Trang Cấu hình tham số & Giờ cao điểm

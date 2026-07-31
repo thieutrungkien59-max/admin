@@ -1,3 +1,16 @@
+// ==========================================
+// HELPER PARSERS (Chống crash)
+// ==========================================
+double _parseDouble(dynamic value, [double defaultValue = 0.0]) {
+  if (value == null) return defaultValue;
+  if (value is num) return value.toDouble();
+  if (value is String) return double.tryParse(value) ?? defaultValue;
+  return defaultValue;
+}
+
+// ==========================================
+// MODEL
+// ==========================================
 class CauHinhGioCaoDiemModel {
   final String maCd;
   final String gioBatDau;
@@ -15,10 +28,13 @@ class CauHinhGioCaoDiemModel {
 
   factory CauHinhGioCaoDiemModel.fromJson(Map<String, dynamic> json) {
     return CauHinhGioCaoDiemModel(
-      maCd: json['maCd'] ?? json['MaCd'] ?? 'CD01',
-      gioBatDau: json['gioBatDau'] ?? json['GioBatDau'] ?? '07:30:00',
-      gioKetThuc: json['gioKetThuc'] ?? json['GioKetThuc'] ?? '19:00:00',
-      heSoPhi: (json['heSoPhi'] ?? json['HeSoPhi'] ?? json['heSoPhuPhi'] ?? 1.5).toDouble(),
+      maCd: (json['maCd'] ?? json['MaCd'] ?? 'CD01').toString(),
+      gioBatDau: (json['gioBatDau'] ?? json['GioBatDau'] ?? '07:30:00').toString(),
+      gioKetThuc: (json['gioKetThuc'] ?? json['GioKetThuc'] ?? '19:00:00').toString(),
+      heSoPhi: _parseDouble(
+        json['heSoPhi'] ?? json['HeSoPhi'] ?? json['heSoPhuPhi'],
+        1.5,
+      ),
       moTa: json['moTa'] ?? json['MoTa'],
     );
   }
@@ -31,5 +47,21 @@ class CauHinhGioCaoDiemModel {
       'heSoPhi': heSoPhi,
       'moTa': moTa ?? 'Khung giờ cao điểm áp dụng phụ phí',
     };
+  }
+
+  CauHinhGioCaoDiemModel copyWith({
+    String? maCd,
+    String? gioBatDau,
+    String? gioKetThuc,
+    double? heSoPhi,
+    String? moTa,
+  }) {
+    return CauHinhGioCaoDiemModel(
+      maCd: maCd ?? this.maCd,
+      gioBatDau: gioBatDau ?? this.gioBatDau,
+      gioKetThuc: gioKetThuc ?? this.gioKetThuc,
+      heSoPhi: heSoPhi ?? this.heSoPhi,
+      moTa: moTa ?? this.moTa,
+    );
   }
 }

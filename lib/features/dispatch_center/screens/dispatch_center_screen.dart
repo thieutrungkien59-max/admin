@@ -19,6 +19,7 @@ class _DispatchCenterScreenState extends State<DispatchCenterScreen> {
   DonHangModel? _selectedOrder;
 
   bool _isLoading = true;
+  bool _isAssigning = false; // Trạng thái đang thực hiện gọi API phân đơn
   String? _errorMessage;
 
   @override
@@ -27,6 +28,8 @@ class _DispatchCenterScreenState extends State<DispatchCenterScreen> {
     _fetchDataFromApi();
   }
 
+  /// Lấy danh sách đơn hàng chờ nhận (`/api/DonHang/danh-sach-cho-nhan`) 
+  /// và danh sách Shipper (`/api/Shipper/danh-sach-toan-bo`)
   Future<void> _fetchDataFromApi() async {
     setState(() {
       _isLoading = true;
@@ -61,6 +64,56 @@ class _DispatchCenterScreenState extends State<DispatchCenterScreen> {
     }
   }
 
+  /// Thực hiện phân đơn cho Shipper thông qua API: `POST /api/DonHang/admin-phan-don`
+  Future<void> _assignOrderToShipper(ShipperModel shipper) async {
+    if (_selectedOrder == null || _isAssigning) return;
+
+    setState(() {
+      _isAssigning = true;
+    });
+
+    try {
+      final success = await ApiService.phanDon(
+        maDon: _selectedOrder!.id ?? _selectedOrder!.maDon,
+        shipperId: shipper.id,
+      );
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Phân đơn thành công cho tài xế ${shipper.hoTen}!'),
+          backgroundColor: Colors.green.shade700,
+          duration: const Duration(seconds: 2),
+        ),
+      );
+
+      // Cập nhật lại giao diện locally và tự động tải lại dữ liệu mới nhất
+      final assignedOrder = _selectedOrder;
+      setState(() {
+        _pendingOrders.removeWhere((o) => o.id == assignedOrder!.id || o.maDon == assignedOrder.maDon);
+        _selectedOrder = _pendingOrders.isNotEmpty ? _pendingOrders.first : null;
+      });
+
+      // Tải lại dữ liệu mới nhất từ server
+      await _fetchDataFromApi();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Phân đơn thất bại: ${e.toString().replaceAll('Exception: ', '')}'),
+          backgroundColor: Colors.red.shade700,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isAssigning = false;
+        });
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
@@ -72,7 +125,8 @@ class _DispatchCenterScreenState extends State<DispatchCenterScreen> {
             children: [
               CircularProgressIndicator(color: primaryRed),
               const SizedBox(height: 16),
-              const Text('Đang tải dữ liệu từ Server...', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.black54)),
+              const Text('Đang tải dữ liệu điều phối từ Server...',
+                  style: TextStyle(fontWeight: FontWeight.bold, color: Colors.black54)),
             ],
           ),
         ),
@@ -102,27 +156,50 @@ class _DispatchCenterScreenState extends State<DispatchCenterScreen> {
       );
     }
 
-    return Container(
-      color: bgCream,
-      padding: const EdgeInsets.all(12),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 330,
-            child: _buildPendingOrdersColumn(),
+    return Stack(
+      children: [
+        Container(
+          color: bgCream,
+          padding: const EdgeInsets.all(12),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SizedBox(
+                width: 330,
+                child: _buildPendingOrdersColumn(),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildOrderDetailColumn(),
+              ),
+              const SizedBox(width: 12),
+              SizedBox(
+                width: 340,
+                child: _buildShipperRecommendationsColumn(),
+              ),
+            ],
           ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: _buildOrderDetailColumn(),
+        ),
+        if (_isAssigning)
+          Container(
+            color: Colors.black26,
+            child: Center(
+              child: Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      CircularProgressIndicator(color: primaryRed),
+                      const SizedBox(height: 12),
+                      const Text('Đang xử lý phân đơn...', style: TextStyle(fontWeight: FontWeight.bold)),
+                    ],
+                  ),
+                ),
+              ),
+            ),
           ),
-          const SizedBox(width: 12),
-          SizedBox(
-            width: 340,
-            child: _buildShipperRecommendationsColumn(),
-          ),
-        ],
-      ),
+      ],
     );
   }
 
@@ -186,7 +263,7 @@ class _DispatchCenterScreenState extends State<DispatchCenterScreen> {
   }
 
   Widget _buildOrderCard(DonHangModel order) {
-    final isSelected = _selectedOrder?.id == order.id;
+    final isSelected = _selectedOrder?.maDon == order.maDon || _selectedOrder?.id == order.id;
 
     return GestureDetector(
       onTap: () => setState(() => _selectedOrder = order),
@@ -557,18 +634,17 @@ class _DispatchCenterScreenState extends State<DispatchCenterScreen> {
             width: double.infinity,
             height: 36,
             child: shipper.isOnline
-                ? (shipper.isOptimal
-                    ? ElevatedButton.icon(
-                        style: ElevatedButton.styleFrom(backgroundColor: primaryRed, foregroundColor: Colors.white, elevation: 0),
-                        onPressed: () => _assignOrderToShipper(shipper),
-                        icon: const Icon(Icons.send_rounded, size: 14),
-                        label: const Text('Chỉ định Shipper', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
-                      )
-                    : OutlinedButton(
-                        style: OutlinedButton.styleFrom(foregroundColor: primaryRed, side: BorderSide(color: primaryRed)),
-                        onPressed: () => _assignOrderToShipper(shipper),
-                        child: const Text('Chỉ định Shipper', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
-                      ))
+                ? ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: shipper.isOptimal ? primaryRed : Colors.white,
+                      foregroundColor: shipper.isOptimal ? Colors.white : primaryRed,
+                      side: shipper.isOptimal ? BorderSide.none : BorderSide(color: primaryRed),
+                      elevation: 0,
+                    ),
+                    onPressed: _isAssigning ? null : () => _assignOrderToShipper(shipper),
+                    icon: const Icon(Icons.send_rounded, size: 14),
+                    label: const Text('Chỉ định Shipper', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                  )
                 : ElevatedButton(
                     style: ElevatedButton.styleFrom(backgroundColor: Colors.grey.shade300, foregroundColor: Colors.grey.shade600, elevation: 0),
                     onPressed: null,
@@ -578,21 +654,5 @@ class _DispatchCenterScreenState extends State<DispatchCenterScreen> {
         ],
       ),
     );
-  }
-
-  void _assignOrderToShipper(ShipperModel shipper) {
-    if (_selectedOrder == null) return;
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Đã chỉ định đơn ${_selectedOrder!.maDon} cho tài xế ${shipper.hoTen}!'),
-        backgroundColor: Colors.green.shade700,
-      ),
-    );
-
-    setState(() {
-      _pendingOrders.removeWhere((o) => o.id == _selectedOrder!.id);
-      _selectedOrder = _pendingOrders.isNotEmpty ? _pendingOrders.first : null;
-    });
   }
 }

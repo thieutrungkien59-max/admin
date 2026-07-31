@@ -45,7 +45,6 @@ class _DispatchMapScreenState extends State<DispatchMapScreen> {
       final shippers = (results[1] as List)
           .map((json) => ShipperModel.fromJson(json as Map<String, dynamic>))
           .toList();
-
       final List<Marker> generatedMarkers = [];
 
       // 1. Tạo Marker cho Đơn hàng

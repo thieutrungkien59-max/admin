@@ -41,6 +41,33 @@ class ApiService {
     }
   }
 
+    /// Phân đơn cho shipper
+  static Future<bool> phanDon({
+    required String maDon,
+    required String shipperId,
+  }) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/DonHang/admin-phan-don'),
+        headers: _headers,
+        body: jsonEncode({
+          'maDonHang': maDon,
+          'maShipper': shipperId,
+        }),
+      );
+      
+      if (response.statusCode == 200) {
+        return true;
+      } else {
+        print('Lỗi phân đơn: ${response.body}');
+        return false;
+      }
+    } catch (e) {
+      print('Lỗi gọi API phân đơn: $e');
+      return false;
+    }
+  }
+
   /// Lấy đơn hàng theo mã khách hàng
   static Future<List<dynamic>> getDonHangByKhachHang(String maKh) async {
     final response = await http.get(
@@ -62,7 +89,7 @@ class ApiService {
   /// Lấy chi tiết 1 đơn hàng theo mã đơn hàng
   static Future<Map<String, dynamic>> getChiTietDonHang(String maDh) async {
     final response = await http.get(
-      Uri.parse('$baseUrl/DonHang/$maDh'),
+      Uri.parse('$baseUrl/DonHang/chi-tiet/$maDh'),
       headers: _headers,
     );
     return _handleMapResponse(response);
@@ -124,34 +151,10 @@ class ApiService {
   /// Lấy danh sách shipper đang online/hoạt động
   static Future<List<dynamic>> getDanhSachShipper() async {
     final response = await http.get(
-      Uri.parse('$baseUrl/Shipper/danh-sach-online'),
+      Uri.parse('$baseUrl/Shipper/danh-sach-toan-bo'),
       headers: _headers,
     );
     return _handleListResponse(response);
-  }
-
-  /// Phân đơn cho shipper
-  static Future<bool> phanDon(String maDon, String shipperId) async {
-    try {
-      final response = await http.post(
-        Uri.parse('$baseUrl/Shipper/ban-giao-don'),
-        headers: _headers,
-        body: jsonEncode({
-          'maDh': maDon,
-          'maSp': shipperId,
-        }),
-      );
-      
-      if (response.statusCode == 200) {
-        return true;
-      } else {
-        print('Lỗi phân đơn: ${response.body}');
-        return false;
-      }
-    } catch (e) {
-      print('Lỗi gọi API phân đơn: $e');
-      return false;
-    }
   }
 
   /// Đổi trạng thái hoạt động shipper
@@ -172,14 +175,41 @@ class ApiService {
     });
   }
 
-  /// Duyệt hồ sơ shipper
-  static Future<bool> duyetHoSoShipper(Map<String, dynamic> data) async {
-    final response = await http.post(
-      Uri.parse('$baseUrl/Shipper/duyet-ho-so'),
-      headers: _headers,
-      body: json.encode(data),
+  /// Lấy thông tin chi tiết hồ sơ shipper để phê duyệt (UC16)
+  static Future<Map<String, dynamic>> getChiTietShipper(String shipperId) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/Auth/profile/$shipperId'),
+      headers: {'Content-Type': 'application/json'},
     );
-    return response.statusCode == 200;
+
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    } else {
+      throw Exception('Không thể lấy chi tiết hồ sơ ($shipperId)');
+    }
+  }
+
+  static Future<void> duyetHoSoShipper({
+    required String maShipper,
+    required bool isApproved,
+  }) async {
+    final url = Uri.parse('$baseUrl/api/Shipper/phe-duyet/$maShipper');
+
+    final response = await http.post(
+      url,
+      headers: {
+        'Content-Type': 'application/json',
+        // 'Authorization': 'Bearer $token', // Nếu có dùng Token
+      },
+      body: jsonEncode({
+        'isApproved': isApproved,
+      }),
+    );
+
+    if (response.statusCode != 200 && response.statusCode != 204) {
+      final errorData = jsonDecode(response.body);
+      throw Exception(errorData['message'] ?? 'Thao tác phê duyệt thất bại');
+    }
   }
 
   /// Cập nhật vị trí GPS
@@ -254,7 +284,7 @@ class ApiService {
   /// Duyệt phiếu đối soát
   static Future<bool> duyetPhieuDoiSoat(Map<String, dynamic> data) async {
     final response = await http.post(
-      Uri.parse('$baseUrl/DoiSoat/duyet-phieu'),
+      Uri.parse('$baseUrl/DoiSoat/duyet-phieu/${data['maDs']}'),
       headers: _headers,
       body: json.encode(data),
     );
@@ -304,12 +334,28 @@ class ApiService {
   // ==========================================
 
   static List<dynamic> _handleListResponse(http.Response response) {
-    if (response.statusCode == 200) {
-      return json.decode(response.body) as List<dynamic>;
-    } else {
-      throw Exception('Lỗi API (${response.statusCode}): ${response.body}');
+  if (response.statusCode == 200) {
+    final decoded = json.decode(response.body);
+
+    // Trường hợp 1: Backend trả về mảng trực tiếp [...] (như API Đơn hàng ở Ảnh 2)
+    if (decoded is List) {
+      return decoded;
+    } 
+    // Trường hợp 2: Backend bọc mảng trong Object {...} (như API Shipper ở Ảnh 1)
+    if (decoded is Map<String, dynamic>) {
+      if (decoded.containsKey('danhSach') && decoded['danhSach'] is List) {
+        return decoded['danhSach'] as List<dynamic>;
+      }
+      if (decoded.containsKey('data') && decoded['data'] is List) {
+        return decoded['data'] as List<dynamic>;
+      }
     }
+
+    return [];
+  } else {
+    throw Exception('Lỗi API (${response.statusCode}): ${response.body}');
   }
+}
 
   static Map<String, dynamic> _handleMapResponse(http.Response response) {
     if (response.statusCode == 200) {
