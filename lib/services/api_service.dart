@@ -41,11 +41,8 @@ class ApiService {
     }
   }
 
-    /// Phân đơn cho shipper
-  static Future<bool> phanDon({
-    required String maDon,
-    required String shipperId,
-  }) async {
+  /// Phân đơn cho shipper (Đã sửa lại thành positional params để khớp UI)
+  static Future<bool> phanDon(String maDon, String shipperId) async {
     try {
       final response = await http.post(
         Uri.parse('$baseUrl/DonHang/admin-phan-don'),
@@ -170,37 +167,38 @@ class ApiService {
   /// Ép tài xế ngoại tuyến (Hỗ trợ gọi nhanh từ nút trên Dashboard)
   static Future<bool> forceOffline(String maShipper) async {
     return await doiTrangThaiHoatDongShipper({
-      'maSp': maShipper,
-      'isOnline': false, // offline
+      'maShipper': maShipper,
+      'trangThaiMoi': 'NgoaiTuyen', 
     });
   }
 
-  /// Lấy thông tin chi tiết hồ sơ shipper để phê duyệt (UC16)
+  /// Lấy thông tin chi tiết hồ sơ shipper để phê duyệt
   static Future<Map<String, dynamic>> getChiTietShipper(String shipperId) async {
     final response = await http.get(
       Uri.parse('$baseUrl/Auth/profile/$shipperId'),
-      headers: {'Content-Type': 'application/json'},
+      headers: _headers,
     );
 
     if (response.statusCode == 200) {
-      return jsonDecode(response.body) as Map<String, dynamic>;
+      final decodedData = jsonDecode(response.body);
+      // Bóc tách 'chiTiet' ra luôn để màn hình AppoveShipper dễ lấy hoTen, cccd...
+      return (decodedData['chiTiet'] ?? decodedData) as Map<String, dynamic>;
     } else {
       throw Exception('Không thể lấy chi tiết hồ sơ ($shipperId)');
     }
   }
 
+  /// Duyệt hồ sơ Shipper (Giữ named params để khớp giao diện)
   static Future<void> duyetHoSoShipper({
     required String maShipper,
     required bool isApproved,
   }) async {
-    final url = Uri.parse('$baseUrl/api/Shipper/phe-duyet/$maShipper');
+    // Đã xóa chữ /api dư thừa trong đường dẫn
+    final url = Uri.parse('$baseUrl/Shipper/phe-duyet/$maShipper');
 
     final response = await http.post(
       url,
-      headers: {
-        'Content-Type': 'application/json',
-        // 'Authorization': 'Bearer $token', // Nếu có dùng Token
-      },
+      headers: _headers,
       body: jsonEncode({
         'isApproved': isApproved,
       }),
@@ -334,28 +332,25 @@ class ApiService {
   // ==========================================
 
   static List<dynamic> _handleListResponse(http.Response response) {
-  if (response.statusCode == 200) {
-    final decoded = json.decode(response.body);
+    if (response.statusCode == 200) {
+      final decoded = json.decode(response.body);
 
-    // Trường hợp 1: Backend trả về mảng trực tiếp [...] (như API Đơn hàng ở Ảnh 2)
-    if (decoded is List) {
-      return decoded;
-    } 
-    // Trường hợp 2: Backend bọc mảng trong Object {...} (như API Shipper ở Ảnh 1)
-    if (decoded is Map<String, dynamic>) {
-      if (decoded.containsKey('danhSach') && decoded['danhSach'] is List) {
-        return decoded['danhSach'] as List<dynamic>;
+      if (decoded is List) {
+        return decoded;
+      } 
+      if (decoded is Map<String, dynamic>) {
+        if (decoded.containsKey('danhSach') && decoded['danhSach'] is List) {
+          return decoded['danhSach'] as List<dynamic>;
+        }
+        if (decoded.containsKey('data') && decoded['data'] is List) {
+          return decoded['data'] as List<dynamic>;
+        }
       }
-      if (decoded.containsKey('data') && decoded['data'] is List) {
-        return decoded['data'] as List<dynamic>;
-      }
+      return [];
+    } else {
+      throw Exception('Lỗi API (${response.statusCode}): ${response.body}');
     }
-
-    return [];
-  } else {
-    throw Exception('Lỗi API (${response.statusCode}): ${response.body}');
   }
-}
 
   static Map<String, dynamic> _handleMapResponse(http.Response response) {
     if (response.statusCode == 200) {
@@ -363,5 +358,50 @@ class ApiService {
     } else {
       throw Exception('Lỗi API (${response.statusCode}): ${response.body}');
     }
+  }
+}
+
+class OsrmService {
+  /// Hàm lấy khoảng cách thực tế (Đường bộ) từ OSRM
+  /// Trả về một Map chứa: 'distance' (km) và 'duration' (phút)
+  static Future<Map<String, double>> getRealRouting(
+    double startLat, 
+    double startLng, 
+    double endLat, 
+    double endLng,
+  ) async {
+    // ⚠️ LƯU Ý CỰC KỲ QUAN TRỌNG: 
+    // OSRM bắt buộc truyền tọa độ theo thứ tự: KINH ĐỘ (Lng) phẩy VĨ ĐỘ (Lat)
+    final String url = 
+        'http://router.project-osrm.org/route/v1/driving/$startLng,$startLat;$endLng,$endLat?overview=false';
+
+    try {
+      final response = await http.get(Uri.parse(url));
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+
+        // Kiểm tra xem có tìm được đường đi không
+        if (data['routes'] != null && data['routes'].isNotEmpty) {
+          final route = data['routes'][0];
+          
+          // OSRM trả về khoảng cách bằng MÉT -> chia 1000 ra KM
+          final distanceKm = route['distance'] / 1000.0;
+          
+          // OSRM trả về thời gian bằng GIÂY -> chia 60 ra PHÚT
+          final durationMin = route['duration'] / 60.0;
+
+          return {
+            'distance': double.parse(distanceKm.toStringAsFixed(1)), // Làm tròn 1 chữ số thập phân
+            'duration': double.parse(durationMin.toStringAsFixed(1)),
+          };
+        }
+      }
+    } catch (e) {
+      print('Lỗi gọi API OSRM: $e');
+    }
+
+    // Nếu lỗi hoặc không tìm thấy đường thì trả về 0
+    return {'distance': 0.0, 'duration': 0.0};
   }
 }

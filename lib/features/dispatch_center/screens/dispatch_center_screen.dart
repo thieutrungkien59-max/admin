@@ -64,8 +64,24 @@ class _DispatchCenterScreenState extends State<DispatchCenterScreen> {
     }
   }
 
-  /// Thực hiện phân đơn cho Shipper thông qua API: `POST /api/DonHang/admin-phan-don`
-  Future<void> _assignOrderToShipper(ShipperModel shipper) async {
+  void tinhDuongChoShipper() async {
+  double latShipper = 10.7769; // Lấy từ shipper.lat
+  double lngShipper = 106.7009; // Lấy từ shipper.lng
+  
+  double latDiemLay = 10.7925; // Lấy từ đơn hàng
+  double lngDiemLay = 106.6852; 
+
+  final result = await OsrmService.getRealRouting(
+    latShipper, lngShipper, latDiemLay, lngDiemLay
+  );
+
+  print('Khoảng cách xe chạy: ${result['distance']} km');
+  print('Thời gian dự kiến: ${result['duration']} phút');
+  
+  // SetState cập nhật UI hiển thị lên màn hình thôi!
+}
+
+ Future<void> _assignOrderToShipper(ShipperModel shipper) async {
     if (_selectedOrder == null || _isAssigning) return;
 
     setState(() {
@@ -73,30 +89,35 @@ class _DispatchCenterScreenState extends State<DispatchCenterScreen> {
     });
 
     try {
+      // Gọi API phân đơn (truyền biến trực tiếp, không dùng tham số tên để tránh báo đỏ)
+      // _selectedOrder!.maDon tương ứng với maDh trong SQL
+      // shipper.id tương ứng với maSp trong SQL
       final success = await ApiService.phanDon(
-        maDon: _selectedOrder!.id ?? _selectedOrder!.maDon,
-        shipperId: shipper.id,
+        _selectedOrder!.maDon, 
+        shipper.id,            
       );
 
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Phân đơn thành công cho tài xế ${shipper.hoTen}!'),
-          backgroundColor: Colors.green.shade700,
-          duration: const Duration(seconds: 2),
-        ),
-      );
+      if (success) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Phân đơn thành công cho tài xế ${shipper.hoTen}!'),
+            backgroundColor: Colors.green.shade700,
+            duration: const Duration(seconds: 2),
+          ),
+        );
 
-      // Cập nhật lại giao diện locally và tự động tải lại dữ liệu mới nhất
-      final assignedOrder = _selectedOrder;
-      setState(() {
-        _pendingOrders.removeWhere((o) => o.id == assignedOrder!.id || o.maDon == assignedOrder.maDon);
-        _selectedOrder = _pendingOrders.isNotEmpty ? _pendingOrders.first : null;
-      });
+        // 1. Cập nhật giao diện: Xóa đơn vừa phân khỏi danh sách chờ
+        final assignedOrder = _selectedOrder;
+        setState(() {
+          _pendingOrders.removeWhere((o) => o.maDon == assignedOrder!.maDon);
+          _selectedOrder = _pendingOrders.isNotEmpty ? _pendingOrders.first : null;
+        });
 
-      // Tải lại dữ liệu mới nhất từ server
-      await _fetchDataFromApi();
+        // 2. Refresh lại danh sách mới nhất từ Backend (Để cập nhật tải trọng/trạng thái shipper)
+        await _fetchDataFromApi();
+      }
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

@@ -77,7 +77,7 @@ class ShipperModel {
         true,
       ),
       isOptimal: _parseBool(json['isOptimal'] ?? json['IsOptimal']),
-      trangThaiDuyet: (json['trangThaiDuyet'] ?? json['TrangThaiHoSo'] ?? 'ChoDuyet').toString(),
+    trangThaiDuyet: (json['trangThaiHoSo'] ?? json['TrangThaiHoSo'] ?? json['trangThaiDuyet'] ?? 'ChoDuyet').toString(),
       lyDoKhongKhaDung: json['lyDoKhongKhaDung'] ?? json['LyDoKhongKhaDung'],
       lat: _parseDouble(json['lat'] ?? json['Lat'], 10.7769),
       lng: _parseDouble(json['lng'] ?? json['Lng'], 106.7009),
