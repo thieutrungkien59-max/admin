@@ -1,34 +1,94 @@
 // ==========================================
-// HELPER PARSERS (Chống crash)
+// HELPER PARSERS
 // ==========================================
+
 double _parseDouble(dynamic value, [double defaultValue = 0.0]) {
   if (value == null) return defaultValue;
-  if (value is num) return value.toDouble();
-  if (value is String) return double.tryParse(value) ?? defaultValue;
+
+  if (value is num) {
+    return value.toDouble();
+  }
+
+  if (value is String) {
+    return double.tryParse(value.trim()) ?? defaultValue;
+  }
+
   return defaultValue;
+}
+
+double? _parseNullableDouble(dynamic value) {
+  if (value == null) return null;
+
+  if (value is num) {
+    return value.toDouble();
+  }
+
+  if (value is String) {
+    final trimmedValue = value.trim();
+
+    if (trimmedValue.isEmpty) {
+      return null;
+    }
+
+    return double.tryParse(trimmedValue);
+  }
+
+  return null;
 }
 
 int _parseInt(dynamic value, [int defaultValue = 0]) {
   if (value == null) return defaultValue;
-  if (value is num) return value.toInt();
-  if (value is String) return int.tryParse(value) ?? defaultValue;
+
+  if (value is num) {
+    return value.toInt();
+  }
+
+  if (value is String) {
+    return int.tryParse(value.trim()) ?? defaultValue;
+  }
+
   return defaultValue;
 }
 
 bool _parseBool(dynamic value, [bool defaultValue = false]) {
   if (value == null) return defaultValue;
-  if (value is bool) return value;
-  if (value is String) {
-    final lower = value.toLowerCase();
-    return lower == 'true' || lower == 'tructuyen' || lower == 'online' || lower == '1';
+
+  if (value is bool) {
+    return value;
   }
-  if (value is num) return value == 1;
+
+  if (value is String) {
+    final lowerValue = value.trim().toLowerCase();
+
+    return lowerValue == 'true' ||
+        lowerValue == 'tructuyen' ||
+        lowerValue == 'online' ||
+        lowerValue == '1';
+  }
+
+  if (value is num) {
+    return value == 1;
+  }
+
   return defaultValue;
+}
+
+DateTime? _parseDateTime(dynamic value) {
+  if (value == null) return null;
+
+  final rawValue = value.toString().trim();
+
+  if (rawValue.isEmpty) {
+    return null;
+  }
+
+  return DateTime.tryParse(rawValue);
 }
 
 // ==========================================
 // SHIPPER MODEL
 // ==========================================
+
 class ShipperModel {
   final String id;
   final String hoTen;
@@ -40,12 +100,19 @@ class ShipperModel {
   final int thoiGianRanhPhut;
   final bool isOnline;
   final bool isOptimal;
-  final String trangThaiDuyet; // 'ChoDuyet', 'DaDuyet', 'TuChoi'
+  final String trangThaiDuyet;
   final String? lyDoKhongKhaDung;
-  final double lat;
-  final double lng;
 
-  ShipperModel({
+  /// GPS phải nullable.
+  ///
+  /// null có nghĩa là shipper chưa gửi GPS hoặc API chưa trả GPS.
+  final double? lat;
+  final double? lng;
+
+  /// Thời điểm backend ghi nhận GPS gần nhất.
+  final DateTime? locationUpdatedAt;
+
+  const ShipperModel({
     required this.id,
     required this.hoTen,
     required this.bienSo,
@@ -54,33 +121,126 @@ class ShipperModel {
     required this.soDonDaGiao,
     required this.khoangCachKm,
     required this.thoiGianRanhPhut,
-    this.isOnline = true,
+    required this.trangThaiDuyet,
+    required this.lat,
+    required this.lng,
+    required this.locationUpdatedAt,
+    this.isOnline = false,
     this.isOptimal = false,
-    this.trangThaiDuyet = 'ChoDuyet', // Mặc định là ChoDuyet nếu backend không gửi
     this.lyDoKhongKhaDung,
-    this.lat = 10.7769,
-    this.lng = 106.7009,
   });
+
+  bool get hasValidLocation {
+    final currentLat = lat;
+    final currentLng = lng;
+
+    if (currentLat == null || currentLng == null) {
+      return false;
+    }
+
+    return currentLat >= -90 &&
+        currentLat <= 90 &&
+        currentLng >= -180 &&
+        currentLng <= 180;
+  }
+
+  /// Có GPS nhưng dữ liệu đã quá 5 phút.
+  ///
+  /// Có thể điều chỉnh ngưỡng này theo nghiệp vụ.
+  bool get isLocationStale {
+    final updatedAt = locationUpdatedAt;
+
+    if (updatedAt == null) {
+      return true;
+    }
+
+    final now = updatedAt.isUtc ? DateTime.now().toUtc() : DateTime.now();
+
+    return now.difference(updatedAt).inMinutes > 5;
+  }
 
   factory ShipperModel.fromJson(Map<String, dynamic> json) {
     return ShipperModel(
-      id: (json['maSp'] ?? json['maTk'] ?? json['id'] ?? json['Id'] ?? '').toString(),
+      id:
+          (json['maSp'] ??
+                  json['MaSp'] ??
+                  json['maTk'] ??
+                  json['MaTk'] ??
+                  json['id'] ??
+                  json['Id'] ??
+                  '')
+              .toString(),
+
       hoTen: (json['hoTen'] ?? json['HoTen'] ?? 'Tài xế').toString(),
-      bienSo: (json['bienSoXe'] ?? json['bienSo'] ?? json['BienSo'] ?? 'N/A').toString(),
-      soDienThoai: (json['soDienThoai'] ?? json['SoDienThoai'] ?? 'N/A').toString(),
+
+      bienSo:
+          (json['bienSoXe'] ??
+                  json['BienSoXe'] ??
+                  json['bienSo'] ??
+                  json['BienSo'] ??
+                  'N/A')
+              .toString(),
+
+      soDienThoai: (json['soDienThoai'] ?? json['SoDienThoai'] ?? 'N/A')
+          .toString(),
+
       danhGia: _parseDouble(json['danhGia'] ?? json['DanhGia'], 5.0),
+
       soDonDaGiao: _parseInt(json['soDonDaGiao'] ?? json['SoDonDaGiao']),
+
       khoangCachKm: _parseDouble(json['khoangCachKm'] ?? json['KhoangCachKm']),
-      thoiGianRanhPhut: _parseInt(json['thoiGianRanhPhut'] ?? json['ThoiGianRanhPhut']),
-      isOnline: _parseBool(
-        json['trangThaiHoatDong'] ?? json['isOnline'] ?? json['IsOnline'],
-        true,
+
+      thoiGianRanhPhut: _parseInt(
+        json['thoiGianRanhPhut'] ?? json['ThoiGianRanhPhut'],
       ),
+
+      // Thiếu trạng thái phải xem là offline, không mặc định online.
+      isOnline: _parseBool(
+        json['trangThaiHoatDong'] ??
+            json['TrangThaiHoatDong'] ??
+            json['isOnline'] ??
+            json['IsOnline'],
+        false,
+      ),
+
       isOptimal: _parseBool(json['isOptimal'] ?? json['IsOptimal']),
-    trangThaiDuyet: (json['trangThaiHoSo'] ?? json['TrangThaiHoSo'] ?? json['trangThaiDuyet'] ?? 'ChoDuyet').toString(),
-      lyDoKhongKhaDung: json['lyDoKhongKhaDung'] ?? json['LyDoKhongKhaDung'],
-      lat: _parseDouble(json['lat'] ?? json['Lat'], 10.7769),
-      lng: _parseDouble(json['lng'] ?? json['Lng'], 106.7009),
+
+      trangThaiDuyet:
+          (json['trangThaiHoSo'] ??
+                  json['TrangThaiHoSo'] ??
+                  json['trangThaiDuyet'] ??
+                  json['TrangThaiDuyet'] ??
+                  'ChoDuyet')
+              .toString(),
+
+      lyDoKhongKhaDung: (json['lyDoKhongKhaDung'] ?? json['LyDoKhongKhaDung'])
+          ?.toString(),
+
+      // Hỗ trợ cả field hiện tại và field backend dự kiến.
+      lat: _parseNullableDouble(
+        json['latitude'] ??
+            json['Latitude'] ??
+            json['viDo'] ??
+            json['ViDo'] ??
+            json['lat'] ??
+            json['Lat'],
+      ),
+
+      lng: _parseNullableDouble(
+        json['longitude'] ??
+            json['Longitude'] ??
+            json['kinhDo'] ??
+            json['KinhDo'] ??
+            json['lng'] ??
+            json['Lng'],
+      ),
+
+      locationUpdatedAt: _parseDateTime(
+        json['locationUpdatedAt'] ??
+            json['LocationUpdatedAt'] ??
+            json['thoiGianCapNhat'] ??
+            json['ThoiGianCapNhat'],
+      ),
     );
   }
 
@@ -98,42 +258,9 @@ class ShipperModel {
       'isOptimal': isOptimal,
       'trangThaiDuyet': trangThaiDuyet,
       'lyDoKhongKhaDung': lyDoKhongKhaDung,
-      'lat': lat,
-      'lng': lng,
+      'latitude': lat,
+      'longitude': lng,
+      'locationUpdatedAt': locationUpdatedAt?.toIso8601String(),
     };
-  }
-
-  ShipperModel copyWith({
-    String? id,
-    String? hoTen,
-    String? bienSo,
-    String? soDienThoai,
-    double? danhGia,
-    int? soDonDaGiao,
-    double? khoangCachKm,
-    int? thoiGianRanhPhut,
-    bool? isOnline,
-    bool? isOptimal,
-    String? trangThaiDuyet,
-    String? lyDoKhongKhaDung,
-    double? lat,
-    double? lng,
-  }) {
-    return ShipperModel(
-      id: id ?? this.id,
-      hoTen: hoTen ?? this.hoTen,
-      bienSo: bienSo ?? this.bienSo,
-      soDienThoai: soDienThoai ?? this.soDienThoai,
-      danhGia: danhGia ?? this.danhGia,
-      soDonDaGiao: soDonDaGiao ?? this.soDonDaGiao,
-      khoangCachKm: khoangCachKm ?? this.khoangCachKm,
-      thoiGianRanhPhut: thoiGianRanhPhut ?? this.thoiGianRanhPhut,
-      isOnline: isOnline ?? this.isOnline,
-      isOptimal: isOptimal ?? this.isOptimal,
-      trangThaiDuyet: trangThaiDuyet ?? this.trangThaiDuyet,
-      lyDoKhongKhaDung: lyDoKhongKhaDung ?? this.lyDoKhongKhaDung,
-      lat: lat ?? this.lat,
-      lng: lng ?? this.lng,
-    );
   }
 }

@@ -1,12 +1,12 @@
-import 'package:flutter/material.dart';
-import 'package:flutter_map/flutter_map.dart';
-import 'package:latlong2/latlong.dart';
 import 'package:admin/models/don_hang_model.dart';
 import 'package:admin/models/shipper_model.dart';
 import 'package:admin/services/api_service.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
 
 class DashboardScreen extends StatefulWidget {
-  const DashboardScreen({Key? key}) : super(key: key);
+  const DashboardScreen({super.key});
 
   @override
   State<DashboardScreen> createState() => _DashboardScreenState();
@@ -18,10 +18,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   List<Marker> _markers = [];
   List<DonHangModel> _pendingOrders = [];
+
   int _pendingOrdersCount = 0;
   int _onlineShippersCount = 0;
   int _shippingOrdersCount = 0;
   int _codWarningsCount = 0;
+
+  int _ordersWithoutLocation = 0;
+  int _shippersWithoutLocation = 0;
 
   @override
   void initState() {
@@ -29,98 +33,157 @@ class _DashboardScreenState extends State<DashboardScreen> {
     _loadDashboardData();
   }
 
-  /// Hàm phụ trợ bóc tách mảng an toàn từ dữ liệu API
-  /// Tránh lỗi: TypeError: 0: type 'int' is not a subtype of type 'String' trên Web
-  List<dynamic> _extractList(dynamic data) {
-    if (data is List) {
-      return data;
-    } else if (data is Map<String, dynamic>) {
-      if (data.containsKey('danhSach') && data['danhSach'] is List) {
-        return data['danhSach'] as List<dynamic>;
-      }
-      if (data.containsKey('data') && data['data'] is List) {
-        return data['data'] as List<dynamic>;
-      }
-    }
-    return [];
-  }
-
   Future<void> _loadDashboardData() async {
-    setState(() {
-      _isLoading = true;
-      _error = null;
-    });
+    if (mounted) {
+      setState(() {
+        _isLoading = true;
+        _error = null;
+      });
+    }
 
     try {
-      // Gọi song song tất cả các API cần thiết cho Dashboard
       final results = await Future.wait([
-        ApiService.getDonHangChoNhan(),      // [0] Danh sách đơn chờ
-        ApiService.getDanhSachShipper(),     // [1] Danh sách shipper
-        ApiService.getSoLuongDangGiao(),     // [2] Số lượng đơn đang giao
-        ApiService.getSoLuongCanhBaoCod(),   // [3] Số lượng cảnh báo COD
+        ApiService.getDonHangChoNhan(),
+        ApiService.getDanhSachShipper(),
+        ApiService.getSoLuongDangGiao(),
+        ApiService.getSoLuongCanhBaoCod(),
       ]);
 
       if (!mounted) return;
 
-      // Bóc tách mảng an toàn trước khi chuyển đổi Model
-      final rawOrders = _extractList(results[0]);
+      final rawOrders = results[0] as List<dynamic>;
+      final rawShippers = results[1] as List<dynamic>;
+
       final orders = rawOrders
-          .map((json) => DonHangModel.fromJson(json as Map<String, dynamic>))
+          .whereType<Map<String, dynamic>>()
+          .map(DonHangModel.fromJson)
           .toList();
 
-      final rawShippers = _extractList(results[1]);
       final shippers = rawShippers
-          .map((json) => ShipperModel.fromJson(json as Map<String, dynamic>))
+          .whereType<Map<String, dynamic>>()
+          .map(ShipperModel.fromJson)
           .toList();
 
-      final int shippingCount = results[2] is int ? results[2] as int : 0;
-      final int codWarningCount = results[3] is int ? results[3] as int : 0;
+      final shippingCount = results[2] is int ? results[2] as int : 0;
 
-      final List<Marker> generatedMarkers = [];
+      final codWarningCount = results[3] is int ? results[3] as int : 0;
 
-      // Tạo Marker cho Đơn hàng
-      for (var i = 0; i < orders.length; i++) {
-        final order = orders[i];
-        final lat = 10.7769 + (i * 0.004);
-        final lng = 106.7009 + (i * 0.003);
+      final generatedMarkers = <Marker>[];
 
-        generatedMarkers.add(
-          Marker(
-            point: LatLng(lat, lng),
-            width: 40,
-            height: 40,
-            child: Tooltip(
-              message: 'Đơn: ${order.maDon}\nLấy: ${order.diemLayHang} -> Giao: ${order.diemGiaoHang}',
-              child: GestureDetector(
-                onTap: () => _showDetailDialog(
-                  title: 'Thông tin đơn hàng #${order.maDon}',
-                  content: 'Điểm lấy: ${order.diemLayHang}\nĐiểm giao: ${order.diemGiaoHang}\nTrạng thái: ${order.isUrgent ? "Gấp" : "Thường"}',
-                ),
-                child: Icon(
-                  Icons.location_on,
-                  color: order.isUrgent ? Colors.red : Colors.orange,
-                  size: 38,
+      var ordersWithoutLocation = 0;
+      var shippersWithoutLocation = 0;
+
+      // ==========================================
+      // MARKER ĐƠN HÀNG
+      // ==========================================
+
+      for (final order in orders) {
+        var hasAtLeastOneLocation = false;
+
+        if (order.hasValidPickupLocation) {
+          hasAtLeastOneLocation = true;
+
+          generatedMarkers.add(
+            Marker(
+              point: LatLng(order.pickupLatitude!, order.pickupLongitude!),
+              width: 42,
+              height: 42,
+              child: Tooltip(
+                message:
+                    'Điểm lấy - ${order.maDon}\n'
+                    '${order.diemLayHang}',
+                child: GestureDetector(
+                  onTap: () {
+                    _showOrderDialog(
+                      order: order,
+                      locationName: 'Điểm lấy hàng',
+                      address: order.diemLayHang,
+                    );
+                  },
+                  child: const Icon(
+                    Icons.location_on,
+                    color: Colors.orange,
+                    size: 40,
+                  ),
                 ),
               ),
             ),
-          ),
-        );
+          );
+        }
+
+        if (order.hasValidDeliveryLocation) {
+          hasAtLeastOneLocation = true;
+
+          generatedMarkers.add(
+            Marker(
+              point: LatLng(order.deliveryLatitude!, order.deliveryLongitude!),
+              width: 42,
+              height: 42,
+              child: Tooltip(
+                message:
+                    'Điểm giao - ${order.maDon}\n'
+                    '${order.diemGiaoHang}',
+                child: GestureDetector(
+                  onTap: () {
+                    _showOrderDialog(
+                      order: order,
+                      locationName: 'Điểm giao hàng',
+                      address: order.diemGiaoHang,
+                    );
+                  },
+                  child: const Icon(
+                    Icons.location_on,
+                    color: Colors.red,
+                    size: 40,
+                  ),
+                ),
+              ),
+            ),
+          );
+        }
+
+        if (!hasAtLeastOneLocation) {
+          ordersWithoutLocation++;
+        }
       }
 
-      // Tạo Marker cho Shipper
-      for (var shipper in shippers) {
+      // ==========================================
+      // MARKER SHIPPER
+      // ==========================================
+
+      for (final shipper in shippers) {
+        if (!shipper.hasValidLocation) {
+          shippersWithoutLocation++;
+          continue;
+        }
+
+        final Color markerColor;
+
+        if (!shipper.isOnline) {
+          markerColor = Colors.grey;
+        } else if (shipper.isLocationStale) {
+          markerColor = Colors.amber;
+        } else {
+          markerColor = Colors.green;
+        }
+
         generatedMarkers.add(
           Marker(
-            point: LatLng(shipper.lat, shipper.lng),
-            width: 40,
-            height: 40,
+            point: LatLng(shipper.lat!, shipper.lng!),
+            width: 42,
+            height: 42,
             child: Tooltip(
-              message: 'Shipper: ${shipper.hoTen}\n${shipper.bienSo} | Status: ${shipper.isOnline ? "Online" : "Offline"}',
+              message:
+                  'Shipper: ${shipper.hoTen}\n'
+                  '${shipper.bienSo}\n'
+                  '${shipper.isOnline ? "Online" : "Offline"}',
               child: GestureDetector(
-                onTap: () => _showShipperActionSheet(shipper),
+                onTap: () {
+                  _showShipperActionSheet(shipper);
+                },
                 child: Icon(
                   Icons.directions_bike,
-                  color: shipper.isOnline ? Colors.green : Colors.grey,
+                  color: markerColor,
                   size: 34,
                 ),
               ),
@@ -132,62 +195,160 @@ class _DashboardScreenState extends State<DashboardScreen> {
       setState(() {
         _markers = generatedMarkers;
         _pendingOrders = orders;
+
         _pendingOrdersCount = orders.length;
-        _onlineShippersCount = shippers.where((s) => s.isOnline).length;
+
+        _onlineShippersCount = shippers
+            .where((shipper) => shipper.isOnline)
+            .length;
+
         _shippingOrdersCount = shippingCount;
         _codWarningsCount = codWarningCount;
+
+        _ordersWithoutLocation = ordersWithoutLocation;
+
+        _shippersWithoutLocation = shippersWithoutLocation;
+
         _isLoading = false;
       });
     } catch (e) {
       if (!mounted) return;
+
       setState(() {
-        _error = e.toString().replaceAll('Exception: ', '');
+        _error = e.toString().replaceFirst('Exception: ', '');
+
         _isLoading = false;
       });
     }
   }
 
-  void _showDetailDialog({required String title, required String content}) {
-    showDialog(
+  void _showOrderDialog({
+    required DonHangModel order,
+    required String locationName,
+    required String address,
+  }) {
+    showDialog<void>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(title),
-        content: Text(content),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Đóng'),
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: Text('$locationName - ${order.maDon}'),
+          content: Text(
+            'Địa chỉ: $address\n\n'
+            'Điểm lấy: ${order.diemLayHang}\n'
+            'Điểm giao: ${order.diemGiaoHang}\n'
+            'Người nhận: ${order.tenNguoiNhan}\n'
+            'Liên hệ: ${order.lienHeGiaoHang}\n'
+            'Trạng thái: ${order.trangThai}',
           ),
-        ],
-      ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(dialogContext).pop();
+              },
+              child: const Text('Đóng'),
+            ),
+          ],
+        );
+      },
     );
   }
 
   void _showShipperActionSheet(ShipperModel shipper) {
-    showModalBottomSheet(
+    final updatedAtText =
+        shipper.locationUpdatedAt?.toLocal().toString() ??
+        'Chưa có dữ liệu GPS';
+
+    showModalBottomSheet<void>(
       context: context,
-      builder: (ctx) => Container(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Shipper: ${shipper.hoTen}',
-              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-            Text('Biển số: ${shipper.bienSo}'),
-            Text('Trạng thái: ${shipper.isOnline ? "Hoạt động (Online)" : "Nghỉ (Offline)"}'),
-            const SizedBox(height: 16),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                ElevatedButton(
-                  onPressed: () => Navigator.of(ctx).pop(),
-                  child: const Text('Đóng'),
+                Text(
+                  'Shipper: ${shipper.hoTen}',
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text('Mã: ${shipper.id}'),
+                Text('Biển số: ${shipper.bienSo}'),
+                Text(
+                  'Trạng thái: '
+                  '${shipper.isOnline ? "Online" : "Offline"}',
+                ),
+                Text('GPS cập nhật: $updatedAtText'),
+                const SizedBox(height: 16),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: ElevatedButton(
+                    onPressed: () {
+                      Navigator.of(sheetContext).pop();
+                    },
+                    child: const Text('Đóng'),
+                  ),
                 ),
               ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildStatCard(String title, String value, Color color) {
+    return Expanded(
+      child: Card(
+        elevation: 2,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 6),
+          child: Column(
+            children: [
+              Text(
+                title,
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 12, color: Colors.grey[700]),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                value,
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: color,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildErrorContent() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.error_outline, color: Colors.red, size: 48),
+            const SizedBox(height: 12),
+            Text(
+              'Đã xảy ra lỗi:\n$_error',
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: Colors.red),
+            ),
+            const SizedBox(height: 16),
+            ElevatedButton.icon(
+              onPressed: _loadDashboardData,
+              icon: const Icon(Icons.refresh),
+              label: const Text('Thử lại'),
             ),
           ],
         ),
@@ -203,7 +364,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
-            onPressed: _loadDashboardData,
+            onPressed: _isLoading ? null : _loadDashboardData,
             tooltip: 'Tải lại dữ liệu',
           ),
         ],
@@ -211,84 +372,78 @@ class _DashboardScreenState extends State<DashboardScreen> {
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : _error != null
-              ? Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Icon(Icons.error_outline, color: Colors.red, size: 48),
-                        const SizedBox(height: 12),
-                        Text(
-                          'Đã xảy ra lỗi: $_error',
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(color: Colors.red),
-                        ),
-                        const SizedBox(height: 16),
-                        ElevatedButton(
-                          onPressed: _loadDashboardData,
-                          child: const Text('Thử lại'),
-                        ),
-                      ],
+          ? _buildErrorContent()
+          : Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.all(8),
+                  child: Row(
+                    children: [
+                      _buildStatCard(
+                        'Đơn chờ',
+                        '$_pendingOrdersCount',
+                        Colors.orange,
+                      ),
+                      _buildStatCard(
+                        'Đang giao',
+                        '$_shippingOrdersCount',
+                        Colors.blue,
+                      ),
+                      _buildStatCard(
+                        'Shipper',
+                        '$_onlineShippersCount',
+                        Colors.green,
+                      ),
+                      _buildStatCard(
+                        'Cảnh báo COD',
+                        '$_codWarningsCount',
+                        Colors.red,
+                      ),
+                    ],
+                  ),
+                ),
+
+                if (_ordersWithoutLocation > 0 || _shippersWithoutLocation > 0)
+                  Container(
+                    width: double.infinity,
+                    margin: const EdgeInsets.symmetric(horizontal: 8),
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.orange.shade300),
+                    ),
+                    child: Text(
+                      'Dữ liệu bản đồ chưa đầy đủ: '
+                      '$_ordersWithoutLocation đơn thiếu tọa độ, '
+                      '$_shippersWithoutLocation shipper thiếu GPS.',
+                      style: TextStyle(
+                        color: Colors.orange.shade900,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ),
-                )
-              : Column(
-                  children: [
-                    // Các ô thống kê nhanh
-                    Padding(
-                      padding: const EdgeInsets.all(8.0),
-                      child: Row(
-                        children: [
-                          _buildStatCard('Đơn chờ', '$_pendingOrdersCount', Colors.orange),
-                          _buildStatCard('Đang giao', '$_shippingOrdersCount', Colors.blue),
-                          _buildStatCard('Shipper', '$_onlineShippersCount', Colors.green),
-                          _buildStatCard('Cảnh báo COD', '$_codWarningsCount', Colors.red),
-                        ],
-                      ),
-                    ),
-                    // Bản đồ khu vực
-                    Expanded(
-                      child: FlutterMap(
-                        options: const MapOptions(
-                          initialCenter: LatLng(10.7769, 106.7009), // TP.HCM
-                          initialZoom: 13.0,
-                        ),
-                        children: [
-                          TileLayer(
-                            urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                            userAgentPackageName: 'com.example.app',
-                          ),
-                          MarkerLayer(markers: _markers),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-    );
-  }
 
-  Widget _buildStatCard(String title, String value, Color color) {
-    return Expanded(
-      child: Card(
-        elevation: 2,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 12.0, horizontal: 8.0),
-          child: Column(
-            children: [
-              Text(
-                title,
-                style: TextStyle(fontSize: 12, color: Colors.grey[700]),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                value,
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: color),
-              ),
-            ],
-          ),
-        ),
-      ),
+                const SizedBox(height: 8),
+
+                Expanded(
+                  child: FlutterMap(
+                    options: const MapOptions(
+                      initialCenter: LatLng(10.7769, 106.7009),
+                      initialZoom: 13.0,
+                    ),
+                    children: [
+                      TileLayer(
+                        urlTemplate:
+                            'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                        userAgentPackageName: 'com.admin.lougiroute',
+                      ),
+                      MarkerLayer(markers: _markers),
+                    ],
+                  ),
+                ),
+              ],
+            ),
     );
   }
 }
