@@ -372,6 +372,58 @@ class ApiService {
     throw Exception('Lỗi lấy tham số hệ thống');
   }
 
+  /// Thêm/cập nhật một tham số hệ thống.
+  static Future<bool> updateThamSoHeThong({
+    required String maThamSo,
+    required String giaTri,
+    String? moTa,
+  }) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/SystemConfig/cap-nhat-tham-so'),
+      headers: _headers,
+      body: json.encode({'maThamSo': maThamSo, 'giaTri': giaTri, 'moTa': moTa}),
+    );
+
+    if (response.statusCode == 200 || response.statusCode == 201) {
+      return true;
+    }
+
+    throw Exception(
+      'Lỗi cập nhật tham số $maThamSo '
+      '(${response.statusCode}): ${response.body}',
+    );
+  }
+
+  /// Lấy tuyến đường + km + phí từ cùng endpoint backend mà Customer sử dụng.
+  static Future<ShippingRouteData> getShippingRoute({
+    required double pickupLat,
+    required double pickupLng,
+    required double deliveryLat,
+    required double deliveryLng,
+  }) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/DonHang/tinh-phi-van-chuyen'),
+      headers: _headers,
+      body: json.encode({
+        'viDoLay': pickupLat,
+        'kinhDoLay': pickupLng,
+        'viDoGiao': deliveryLat,
+        'kinhDoGiao': deliveryLng,
+      }),
+    );
+
+    if (response.statusCode != 200) {
+      throw Exception(
+        'Không lấy được tuyến đường '
+        '(${response.statusCode}): ${response.body}',
+      );
+    }
+
+    return ShippingRouteData.fromJson(
+      Map<String, dynamic>.from(json.decode(response.body) as Map),
+    );
+  }
+
   // ==========================================
   // HÀM BỔ TRỢ XỬ LÝ RESPONSE (Helper Methods)
   // ==========================================
@@ -403,6 +455,58 @@ class ApiService {
     } else {
       throw Exception('Lỗi API (${response.statusCode}): ${response.body}');
     }
+  }
+}
+
+class ShippingRoutePoint {
+  const ShippingRoutePoint({required this.latitude, required this.longitude});
+
+  final double latitude;
+  final double longitude;
+}
+
+class ShippingRouteData {
+  const ShippingRouteData({
+    required this.distanceKm,
+    required this.durationMinutes,
+    required this.shippingFee,
+    required this.routePoints,
+  });
+
+  final double distanceKm;
+  final int durationMinutes;
+  final double shippingFee;
+  final List<ShippingRoutePoint> routePoints;
+
+  factory ShippingRouteData.fromJson(Map<String, dynamic> json) {
+    double asDouble(dynamic value) =>
+        value is num ? value.toDouble() : double.tryParse('$value') ?? 0;
+
+    final points = <ShippingRoutePoint>[];
+    final rawPoints = json['routePoints'];
+
+    if (rawPoints is List) {
+      for (final item in rawPoints) {
+        if (item is! Map) continue;
+
+        final map = Map<String, dynamic>.from(item);
+        points.add(
+          ShippingRoutePoint(
+            latitude: asDouble(map['latitude'] ?? map['Latitude']),
+            longitude: asDouble(map['longitude'] ?? map['Longitude']),
+          ),
+        );
+      }
+    }
+
+    return ShippingRouteData(
+      distanceKm: asDouble(json['distanceKm']),
+      durationMinutes: (json['durationMinutes'] is num)
+          ? (json['durationMinutes'] as num).round()
+          : int.tryParse('${json['durationMinutes']}') ?? 0,
+      shippingFee: asDouble(json['shippingFee']),
+      routePoints: points,
+    );
   }
 }
 

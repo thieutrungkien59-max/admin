@@ -19,6 +19,8 @@ class _SystemConfigScreenState extends State<SystemConfigScreen> {
   late TextEditingController _startTimeController;
   late TextEditingController _endTimeController;
   late TextEditingController _surchargeController;
+  late TextEditingController _baseShippingFeeController;
+  late TextEditingController _feePerKmController;
 
   bool _isLoading = true;
   bool _isSaving = false;
@@ -36,8 +38,11 @@ class _SystemConfigScreenState extends State<SystemConfigScreen> {
     _startTimeController = TextEditingController();
     _endTimeController = TextEditingController();
     _surchargeController = TextEditingController();
+    _baseShippingFeeController = TextEditingController(text: '15000');
+    _feePerKmController = TextEditingController(text: '5000');
 
     _fetchGioCaoDiemData();
+    _fetchShippingFeeConfig();
   }
 
   @override
@@ -45,6 +50,8 @@ class _SystemConfigScreenState extends State<SystemConfigScreen> {
     _startTimeController.dispose();
     _endTimeController.dispose();
     _surchargeController.dispose();
+    _baseShippingFeeController.dispose();
+    _feePerKmController.dispose();
     super.dispose();
   }
 
@@ -135,6 +142,38 @@ class _SystemConfigScreenState extends State<SystemConfigScreen> {
     }
   }
 
+  Future<void> _fetchShippingFeeConfig() async {
+    try {
+      final data = await ApiService.getThamSoHeThong();
+
+      if (data is! List) return;
+
+      for (final item in data) {
+        if (item is! Map) continue;
+
+        final map = Map<String, dynamic>.from(item);
+        final key = (map['maThamSo'] ?? map['MaThamSo'] ?? '')
+            .toString()
+            .trim();
+        final value = (map['giaTri'] ?? map['GiaTri'] ?? '').toString().trim();
+
+        if (key == 'PHI_VAN_CHUYEN_CO_BAN' && value.isNotEmpty) {
+          _baseShippingFeeController.text = value;
+        }
+
+        if (key == 'PHI_MOI_KM' && value.isNotEmpty) {
+          _feePerKmController.text = value;
+        }
+      }
+
+      if (mounted) {
+        setState(() {});
+      }
+    } catch (e) {
+      debugPrint('Không tải được cấu hình phí vận chuyển: $e');
+    }
+  }
+
   // 2. Cập nhật dữ liệu - Chuẩn theo Schema Swagger
   Future<void> _saveGioCaoDiemData() async {
     if (!_formKey.currentState!.validate()) return;
@@ -158,6 +197,30 @@ class _SystemConfigScreenState extends State<SystemConfigScreen> {
       };
 
       final bool isSuccess = await ApiService.updateGioCaoDiem(payload);
+
+      final baseFee = double.tryParse(_baseShippingFeeController.text.trim());
+      final feePerKm = double.tryParse(_feePerKmController.text.trim());
+
+      if (baseFee == null || baseFee < 0) {
+        throw Exception('Phí vận chuyển cơ bản không hợp lệ.');
+      }
+
+      if (feePerKm == null || feePerKm < 0) {
+        throw Exception('Phí mỗi km không hợp lệ.');
+      }
+
+      await Future.wait([
+        ApiService.updateThamSoHeThong(
+          maThamSo: 'PHI_VAN_CHUYEN_CO_BAN',
+          giaTri: baseFee.toStringAsFixed(0),
+          moTa: 'Phí mở cửa / phí vận chuyển cơ bản (VNĐ)',
+        ),
+        ApiService.updateThamSoHeThong(
+          maThamSo: 'PHI_MOI_KM',
+          giaTri: feePerKm.toStringAsFixed(0),
+          moTa: 'Đơn giá cho mỗi km đường bộ (VNĐ/km)',
+        ),
+      ]);
 
       if (!mounted) return;
 
@@ -460,6 +523,72 @@ class _SystemConfigScreenState extends State<SystemConfigScreen> {
                                         _selectedDays = newDays;
                                       });
                                     },
+                                  ),
+                                  const SizedBox(height: 30),
+                                  const Divider(),
+                                  const SizedBox(height: 18),
+                                  const Text(
+                                    'Cấu hình phí vận chuyển',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 16,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  const Text(
+                                    'Công thức: Phí cơ bản + (Số km đường bộ × Phí/km). '
+                                    'Nếu đang trong giờ cao điểm, kết quả tiếp tục nhân hệ số phụ phí.',
+                                    style: TextStyle(
+                                      color: AppColors.textSubtitle,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 16),
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: TextFormField(
+                                          controller:
+                                              _baseShippingFeeController,
+                                          keyboardType: TextInputType.number,
+                                          decoration: const InputDecoration(
+                                            labelText:
+                                                'Phí vận chuyển cơ bản (VNĐ)',
+                                            hintText: 'VD: 15000',
+                                            border: OutlineInputBorder(),
+                                          ),
+                                          validator: (value) {
+                                            final number = double.tryParse(
+                                              value?.trim() ?? '',
+                                            );
+                                            if (number == null || number < 0) {
+                                              return 'Phí không hợp lệ';
+                                            }
+                                            return null;
+                                          },
+                                        ),
+                                      ),
+                                      const SizedBox(width: 16),
+                                      Expanded(
+                                        child: TextFormField(
+                                          controller: _feePerKmController,
+                                          keyboardType: TextInputType.number,
+                                          decoration: const InputDecoration(
+                                            labelText: 'Phí mỗi km (VNĐ/km)',
+                                            hintText: 'VD: 5000',
+                                            border: OutlineInputBorder(),
+                                          ),
+                                          validator: (value) {
+                                            final number = double.tryParse(
+                                              value?.trim() ?? '',
+                                            );
+                                            if (number == null || number < 0) {
+                                              return 'Phí/km không hợp lệ';
+                                            }
+                                            return null;
+                                          },
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ],
                               ),

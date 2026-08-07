@@ -17,6 +17,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
   String? _error;
 
   List<Marker> _markers = [];
+  List<Polyline> _routePolylines = [];
+  List<Marker> _routeLabels = [];
   List<DonHangModel> _pendingOrders = [];
 
   int _pendingOrdersCount = 0;
@@ -85,6 +87,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
       final codWarningCount = results[3] is int ? results[3] as int : 0;
 
       final generatedMarkers = <Marker>[];
+      final routePolylines = <Polyline>[];
+      final routeLabels = <Marker>[];
 
       var ordersWithoutLocation = 0;
       var shippersWithoutLocation = 0;
@@ -138,6 +142,75 @@ class _DashboardScreenState extends State<DashboardScreen> {
       }
 
       // ==========================================
+      // TUYẾN ĐƯỜNG ĐƠN HÀNG
+      // ==========================================
+      for (var index = 0; index < orders.length; index++) {
+        final order = orders[index];
+
+        if (!order.hasValidPickupLocation || !order.hasValidDeliveryLocation) {
+          continue;
+        }
+
+        try {
+          final route = await ApiService.getShippingRoute(
+            pickupLat: order.pickupLatitude!,
+            pickupLng: order.pickupLongitude!,
+            deliveryLat: order.deliveryLatitude!,
+            deliveryLng: order.deliveryLongitude!,
+          );
+
+          final points = route.routePoints
+              .map((p) => LatLng(p.latitude, p.longitude))
+              .toList();
+
+          if (points.length >= 2) {
+            routePolylines.add(
+              Polyline(
+                points: points,
+                strokeWidth: 4,
+                color: Colors.blueAccent,
+              ),
+            );
+
+            final mid = points[points.length ~/ 2];
+
+            routeLabels.add(
+              Marker(
+                point: mid,
+                width: 110,
+                height: 34,
+                child: Container(
+                  alignment: Alignment.center,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(8),
+                    boxShadow: const [
+                      BoxShadow(blurRadius: 4, color: Colors.black26),
+                    ],
+                  ),
+                  child: Text(
+                    '#${index + 1} • '
+                    '${route.distanceKm.toStringAsFixed(1)} km',
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ),
+            );
+          }
+        } catch (_) {
+          // Route chỉ là lớp hiển thị bổ sung.
+          // Marker đơn hàng vẫn phải hoạt động nếu OSRM lỗi.
+        }
+      }
+
+      // ==========================================
       // MARKER SHIPPER
       // ==========================================
 
@@ -187,6 +260,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
       setState(() {
         _markers = generatedMarkers;
+        _routePolylines = routePolylines;
+        _routeLabels = routeLabels;
         _pendingOrders = orders;
 
         _pendingOrdersCount = orders.length;
@@ -515,6 +590,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                         userAgentPackageName: 'com.admin.lougiroute',
                       ),
+                      if (_routePolylines.isNotEmpty)
+                        PolylineLayer(polylines: _routePolylines),
+                      if (_routeLabels.isNotEmpty)
+                        MarkerLayer(markers: _routeLabels),
                       MarkerLayer(markers: _markers),
                     ],
                   ),

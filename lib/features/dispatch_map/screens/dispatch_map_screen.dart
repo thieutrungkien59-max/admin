@@ -21,6 +21,8 @@ class _DispatchMapScreenState extends State<DispatchMapScreen> {
   static const Duration _refreshInterval = Duration(seconds: 15);
 
   List<Marker> _markers = [];
+  List<Polyline> _routePolylines = [];
+  List<Marker> _routeLabels = [];
 
   Timer? _refreshTimer;
   bool _isLoading = true;
@@ -122,6 +124,8 @@ class _DispatchMapScreenState extends State<DispatchMapScreen> {
       }).toList();
 
       final generatedMarkers = <Marker>[];
+      final routePolylines = <Polyline>[];
+      final routeLabels = <Marker>[];
 
       var ordersWithoutLocation = 0;
       var onlineShippersWithoutLocation = 0;
@@ -180,6 +184,74 @@ class _DispatchMapScreenState extends State<DispatchMapScreen> {
       }
 
       // ==========================================
+      // 1.5 TUYẾN ĐƯỜNG CỦA TỪNG ĐƠN
+      // ==========================================
+      for (var index = 0; index < orders.length; index++) {
+        final order = orders[index];
+
+        if (!order.hasValidPickupLocation || !order.hasValidDeliveryLocation) {
+          continue;
+        }
+
+        try {
+          final route = await ApiService.getShippingRoute(
+            pickupLat: order.pickupLatitude!,
+            pickupLng: order.pickupLongitude!,
+            deliveryLat: order.deliveryLatitude!,
+            deliveryLng: order.deliveryLongitude!,
+          );
+
+          final points = route.routePoints
+              .map((p) => LatLng(p.latitude, p.longitude))
+              .toList();
+
+          if (points.length >= 2) {
+            routePolylines.add(
+              Polyline(
+                points: points,
+                strokeWidth: 4,
+                color: Colors.blueAccent,
+              ),
+            );
+
+            final midpoint = points[points.length ~/ 2];
+
+            routeLabels.add(
+              Marker(
+                point: midpoint,
+                width: 120,
+                height: 36,
+                child: Container(
+                  alignment: Alignment.center,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(8),
+                    boxShadow: const [
+                      BoxShadow(color: Colors.black26, blurRadius: 4),
+                    ],
+                  ),
+                  child: Text(
+                    '#${index + 1} • '
+                    '${route.distanceKm.toStringAsFixed(1)} km',
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ),
+            );
+          }
+        } catch (_) {
+          // Không làm hỏng polling map nếu routing tạm thời lỗi.
+        }
+      }
+
+      // ==========================================
       // 2. MARKER SHIPPER ONLINE
       // ==========================================
       for (final shipper in activeShippers) {
@@ -223,6 +295,8 @@ class _DispatchMapScreenState extends State<DispatchMapScreen> {
 
       setState(() {
         _markers = generatedMarkers;
+        _routePolylines = routePolylines;
+        _routeLabels = routeLabels;
 
         _orderCount = orders.length;
         _onlineShipperCount = activeShippers.length;
@@ -489,6 +563,9 @@ class _DispatchMapScreenState extends State<DispatchMapScreen> {
           urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
           userAgentPackageName: 'com.admin.lougiroute',
         ),
+        if (_routePolylines.isNotEmpty)
+          PolylineLayer(polylines: _routePolylines),
+        if (_routeLabels.isNotEmpty) MarkerLayer(markers: _routeLabels),
         MarkerLayer(markers: _markers),
       ],
     );
