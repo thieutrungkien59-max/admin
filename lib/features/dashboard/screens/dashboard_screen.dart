@@ -59,13 +59,29 @@ class _DashboardScreenState extends State<DashboardScreen> {
           .map(DonHangModel.fromJson)
           .toList();
 
+      // DON_HANG hiện không có ID số tự tăng.
+      // Sắp xếp theo thời gian tạo từ cũ đến mới để đánh số thứ tự ổn định
+      // trong danh sách đơn đang hiển thị trên bản đồ.
+      orders.sort((a, b) {
+        final aDate = a.ngayTao;
+        final bDate = b.ngayTao;
+
+        if (aDate == null && bDate == null) {
+          return a.maDon.compareTo(b.maDon);
+        }
+        if (aDate == null) return 1;
+        if (bDate == null) return -1;
+
+        final byDate = aDate.compareTo(bDate);
+        return byDate != 0 ? byDate : a.maDon.compareTo(b.maDon);
+      });
+
       final shippers = rawShippers
           .whereType<Map<String, dynamic>>()
           .map(ShipperModel.fromJson)
           .toList();
 
       final shippingCount = results[2] is int ? results[2] as int : 0;
-
       final codWarningCount = results[3] is int ? results[3] as int : 0;
 
       final generatedMarkers = <Marker>[];
@@ -77,36 +93,24 @@ class _DashboardScreenState extends State<DashboardScreen> {
       // MARKER ĐƠN HÀNG
       // ==========================================
 
-      for (final order in orders) {
+      for (var index = 0; index < orders.length; index++) {
+        final order = orders[index];
+        final orderNumber = index + 1;
         var hasAtLeastOneLocation = false;
 
         if (order.hasValidPickupLocation) {
           hasAtLeastOneLocation = true;
 
           generatedMarkers.add(
-            Marker(
+            _buildOrderMarker(
+              order: order,
+              orderNumber: orderNumber,
+              markerType: 'L',
+              locationName: 'Điểm lấy hàng',
+              address: order.diemLayHang,
               point: LatLng(order.pickupLatitude!, order.pickupLongitude!),
-              width: 42,
-              height: 42,
-              child: Tooltip(
-                message:
-                    'Điểm lấy - ${order.maDon}\n'
-                    '${order.diemLayHang}',
-                child: GestureDetector(
-                  onTap: () {
-                    _showOrderDialog(
-                      order: order,
-                      locationName: 'Điểm lấy hàng',
-                      address: order.diemLayHang,
-                    );
-                  },
-                  child: const Icon(
-                    Icons.location_on,
-                    color: Colors.orange,
-                    size: 40,
-                  ),
-                ),
-              ),
+              color: Colors.orange,
+              icon: Icons.inventory_2,
             ),
           );
         }
@@ -115,29 +119,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
           hasAtLeastOneLocation = true;
 
           generatedMarkers.add(
-            Marker(
+            _buildOrderMarker(
+              order: order,
+              orderNumber: orderNumber,
+              markerType: 'G',
+              locationName: 'Điểm giao hàng',
+              address: order.diemGiaoHang,
               point: LatLng(order.deliveryLatitude!, order.deliveryLongitude!),
-              width: 42,
-              height: 42,
-              child: Tooltip(
-                message:
-                    'Điểm giao - ${order.maDon}\n'
-                    '${order.diemGiaoHang}',
-                child: GestureDetector(
-                  onTap: () {
-                    _showOrderDialog(
-                      order: order,
-                      locationName: 'Điểm giao hàng',
-                      address: order.diemGiaoHang,
-                    );
-                  },
-                  child: const Icon(
-                    Icons.location_on,
-                    color: Colors.red,
-                    size: 40,
-                  ),
-                ),
-              ),
+              color: Colors.red,
+              icon: Icons.flag,
             ),
           );
         }
@@ -173,10 +163,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
             width: 42,
             height: 42,
             child: Tooltip(
+              waitDuration: const Duration(milliseconds: 250),
               message:
                   'Shipper: ${shipper.hoTen}\n'
-                  '${shipper.bienSo}\n'
-                  '${shipper.isOnline ? "Online" : "Offline"}',
+                  'Mã: ${shipper.id}\n'
+                  'Biển số: ${shipper.bienSo}\n'
+                  'Trạng thái: ${shipper.isOnline ? "Online" : "Offline"}\n'
+                  'GPS: ${shipper.locationUpdatedAt?.toLocal() ?? "Chưa có"}',
               child: GestureDetector(
                 onTap: () {
                   _showShipperActionSheet(shipper);
@@ -197,18 +190,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
         _pendingOrders = orders;
 
         _pendingOrdersCount = orders.length;
-
         _onlineShippersCount = shippers
             .where((shipper) => shipper.isOnline)
             .length;
 
         _shippingOrdersCount = shippingCount;
         _codWarningsCount = codWarningCount;
-
         _ordersWithoutLocation = ordersWithoutLocation;
-
         _shippersWithoutLocation = shippersWithoutLocation;
-
         _isLoading = false;
       });
     } catch (e) {
@@ -216,14 +205,101 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
       setState(() {
         _error = e.toString().replaceFirst('Exception: ', '');
-
         _isLoading = false;
       });
     }
   }
 
+  Marker _buildOrderMarker({
+    required DonHangModel order,
+    required int orderNumber,
+    required String markerType,
+    required String locationName,
+    required String address,
+    required LatLng point,
+    required Color color,
+    required IconData icon,
+  }) {
+    final shortLabel = '$markerType$orderNumber • ${order.maDon}';
+
+    final tooltipMessage =
+        'Đơn #$orderNumber — ${order.maDon}\n'
+        'Loại điểm: $locationName\n'
+        'Địa chỉ: $address\n'
+        'Người nhận: ${order.tenNguoiNhan}\n'
+        'Liên hệ: ${order.lienHeGiaoHang}\n'
+        'Khối lượng: ${order.trongLuong} kg\n'
+        'COD: ${order.tienCod}\n'
+        'Trạng thái: ${order.trangThai}\n'
+        'Ngày tạo: ${order.ngayTao?.toLocal() ?? "Không rõ"}';
+
+    return Marker(
+      point: point,
+      width: 150,
+      height: 58,
+      alignment: Alignment.topCenter,
+      child: Tooltip(
+        waitDuration: const Duration(milliseconds: 250),
+        showDuration: const Duration(seconds: 8),
+        message: tooltipMessage,
+        child: GestureDetector(
+          onTap: () {
+            _showOrderDialog(
+              order: order,
+              orderNumber: orderNumber,
+              locationName: locationName,
+              address: address,
+            );
+          },
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                constraints: const BoxConstraints(maxWidth: 148),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: color, width: 1.5),
+                  boxShadow: const [
+                    BoxShadow(
+                      blurRadius: 4,
+                      offset: Offset(0, 2),
+                      color: Color(0x33000000),
+                    ),
+                  ],
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(icon, size: 15, color: color),
+                    const SizedBox(width: 4),
+                    Flexible(
+                      child: Text(
+                        shortLabel,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: color,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(Icons.location_on, color: color, size: 30),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   void _showOrderDialog({
     required DonHangModel order,
+    required int orderNumber,
     required String locationName,
     required String address,
   }) {
@@ -231,14 +307,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
       context: context,
       builder: (dialogContext) {
         return AlertDialog(
-          title: Text('$locationName - ${order.maDon}'),
+          title: Text('Đơn #$orderNumber — ${order.maDon}'),
           content: Text(
-            'Địa chỉ: $address\n\n'
+            'Loại điểm: $locationName\n'
+            'Địa chỉ hiện tại: $address\n\n'
             'Điểm lấy: ${order.diemLayHang}\n'
             'Điểm giao: ${order.diemGiaoHang}\n'
             'Người nhận: ${order.tenNguoiNhan}\n'
             'Liên hệ: ${order.lienHeGiaoHang}\n'
-            'Trạng thái: ${order.trangThai}',
+            'Khối lượng: ${order.trongLuong} kg\n'
+            'COD: ${order.tienCod}\n'
+            'Trạng thái: ${order.trangThai}\n'
+            'Ngày tạo: ${order.ngayTao?.toLocal() ?? "Không rõ"}',
           ),
           actions: [
             TextButton(
@@ -402,7 +482,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     ],
                   ),
                 ),
-
                 if (_ordersWithoutLocation > 0 || _shippersWithoutLocation > 0)
                   Container(
                     width: double.infinity,
@@ -423,9 +502,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       ),
                     ),
                   ),
-
                 const SizedBox(height: 8),
-
                 Expanded(
                   child: FlutterMap(
                     options: const MapOptions(

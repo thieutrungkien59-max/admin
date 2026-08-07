@@ -89,6 +89,22 @@ class _DispatchMapScreenState extends State<DispatchMapScreen> {
           )
           .toList();
 
+      // DON_HANG hiện không có cột ID số tự tăng.
+      // Đánh số theo NgayTao từ cũ -> mới; nếu trùng thời gian thì dùng MaDon.
+      orders.sort((a, b) {
+        final aDate = a.ngayTao;
+        final bDate = b.ngayTao;
+
+        if (aDate == null && bDate == null) {
+          return a.maDon.compareTo(b.maDon);
+        }
+        if (aDate == null) return 1;
+        if (bDate == null) return -1;
+
+        final byDate = aDate.compareTo(bDate);
+        return byDate != 0 ? byDate : a.maDon.compareTo(b.maDon);
+      });
+
       final shippers = rawShippers
           .map(
             (item) =>
@@ -117,7 +133,9 @@ class _DispatchMapScreenState extends State<DispatchMapScreen> {
       // ==========================================
       // 1. MARKER ĐƠN HÀNG
       // ==========================================
-      for (final order in orders) {
+      for (var index = 0; index < orders.length; index++) {
+        final order = orders[index];
+        final orderNumber = index + 1;
         var hasAtLeastOneLocation = false;
 
         if (order.hasValidPickupLocation) {
@@ -125,30 +143,15 @@ class _DispatchMapScreenState extends State<DispatchMapScreen> {
           pickupMarkerCount++;
 
           generatedMarkers.add(
-            Marker(
+            _buildOrderMarker(
+              order: order,
+              orderNumber: orderNumber,
+              markerType: 'L',
+              locationType: 'Điểm lấy hàng',
+              address: order.diemLayHang,
               point: LatLng(order.pickupLatitude!, order.pickupLongitude!),
-              width: 44,
-              height: 44,
-              alignment: Alignment.bottomCenter,
-              child: Tooltip(
-                message:
-                    'Điểm lấy - ${order.maDon}\n'
-                    '${order.diemLayHang}',
-                child: GestureDetector(
-                  onTap: () {
-                    _showOrderDialog(
-                      order: order,
-                      locationType: 'Điểm lấy hàng',
-                      address: order.diemLayHang,
-                    );
-                  },
-                  child: const Icon(
-                    Icons.location_on,
-                    color: Colors.orange,
-                    size: 42,
-                  ),
-                ),
-              ),
+              color: Colors.orange,
+              icon: Icons.inventory_2,
             ),
           );
         }
@@ -158,30 +161,15 @@ class _DispatchMapScreenState extends State<DispatchMapScreen> {
           deliveryMarkerCount++;
 
           generatedMarkers.add(
-            Marker(
+            _buildOrderMarker(
+              order: order,
+              orderNumber: orderNumber,
+              markerType: 'G',
+              locationType: 'Điểm giao hàng',
+              address: order.diemGiaoHang,
               point: LatLng(order.deliveryLatitude!, order.deliveryLongitude!),
-              width: 44,
-              height: 44,
-              alignment: Alignment.bottomCenter,
-              child: Tooltip(
-                message:
-                    'Điểm giao - ${order.maDon}\n'
-                    '${order.diemGiaoHang}',
-                child: GestureDetector(
-                  onTap: () {
-                    _showOrderDialog(
-                      order: order,
-                      locationType: 'Điểm giao hàng',
-                      address: order.diemGiaoHang,
-                    );
-                  },
-                  child: const Icon(
-                    Icons.location_on,
-                    color: Colors.red,
-                    size: 42,
-                  ),
-                ),
-              ),
+              color: Colors.red,
+              icon: Icons.flag,
             ),
           );
         }
@@ -299,8 +287,98 @@ class _DispatchMapScreenState extends State<DispatchMapScreen> {
         '${twoDigits(local.minute)}';
   }
 
+  Marker _buildOrderMarker({
+    required DonHangModel order,
+    required int orderNumber,
+    required String markerType,
+    required String locationType,
+    required String address,
+    required LatLng point,
+    required Color color,
+    required IconData icon,
+  }) {
+    final shortLabel = '$markerType$orderNumber • ${order.maDon}';
+
+    final tooltipMessage =
+        'Đơn #$orderNumber — ${order.maDon}\n'
+        'Loại điểm: $locationType\n'
+        'Địa chỉ: $address\n'
+        'Điểm lấy: ${order.diemLayHang}\n'
+        'Điểm giao: ${order.diemGiaoHang}\n'
+        'Người nhận: ${order.tenNguoiNhan}\n'
+        'Liên hệ: ${order.lienHeGiaoHang}\n'
+        'Khối lượng: ${order.trongLuong} kg\n'
+        'COD: ${order.tienCod}\n'
+        'Trạng thái: ${order.trangThai}\n'
+        'Ngày tạo: ${_formatDateTime(order.ngayTao)}';
+
+    return Marker(
+      point: point,
+      width: 160,
+      height: 66,
+      alignment: Alignment.bottomCenter,
+      child: Tooltip(
+        waitDuration: const Duration(milliseconds: 250),
+        showDuration: const Duration(seconds: 8),
+        message: tooltipMessage,
+        child: GestureDetector(
+          onTap: () {
+            _showOrderDialog(
+              order: order,
+              orderNumber: orderNumber,
+              locationType: locationType,
+              address: address,
+            );
+          },
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                constraints: const BoxConstraints(maxWidth: 156),
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(7),
+                  border: Border.all(color: color, width: 1.4),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Color(0x33000000),
+                      blurRadius: 4,
+                      offset: Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(icon, size: 14, color: color),
+                    const SizedBox(width: 4),
+                    Flexible(
+                      child: Text(
+                        shortLabel,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: color,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(Icons.location_on, color: color, size: 34),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   void _showOrderDialog({
     required DonHangModel order,
+    required int orderNumber,
     required String locationType,
     required String address,
   }) {
@@ -309,10 +387,11 @@ class _DispatchMapScreenState extends State<DispatchMapScreen> {
       builder: (dialogContext) {
         return AlertDialog(
           title: Text(
-            '$locationType - ${order.maDon}',
+            'Đơn #$orderNumber — ${order.maDon}',
             style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
           ),
           content: Text(
+            'Loại điểm: $locationType\n'
             'Địa chỉ: $address\n\n'
             'Điểm lấy: ${order.diemLayHang}\n'
             'Điểm giao: ${order.diemGiaoHang}\n'

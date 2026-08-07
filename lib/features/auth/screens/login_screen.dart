@@ -131,8 +131,44 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
 
     // KIỂM TRA STATUS CODE TRẢ VỀ TỪ SERVER
     if (response.statusCode == 200 || response.statusCode == 201) {
+      final decoded = jsonDecode(utf8.decode(response.bodyBytes));
+
+      if (decoded is! Map<String, dynamic>) {
+        throw Exception('Dữ liệu đăng nhập trả về không hợp lệ');
+      }
+
+      final user = decoded['user'];
+
+      if (user is! Map) {
+        throw Exception('Server không trả về thông tin tài khoản');
+      }
+
+      final userMap = Map<String, dynamic>.from(user);
+      final maTk = userMap['maTk']?.toString().trim();
+
+      if (maTk == null || maTk.isEmpty) {
+        throw Exception('Server không trả về mã tài khoản');
+      }
+
+      // Lưu thông tin phiên đăng nhập để các màn Admin sử dụng.
+      // Chức năng duyệt đối soát COD cần admin_ma_tk làm NguoiDuyet.
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('admin_ma_tk', maTk);
+
+      final tenDangNhap = userMap['tenDangNhap']?.toString();
+      if (tenDangNhap != null && tenDangNhap.isNotEmpty) {
+        await prefs.setString('admin_ten_dang_nhap', tenDangNhap);
+      }
+
+      final loaiTaiKhoan = userMap['loaiTaiKhoan'];
+      if (loaiTaiKhoan is int) {
+        await prefs.setInt('admin_loai_tai_khoan', loaiTaiKhoan);
+      }
+
       return true;
-    } else if (response.statusCode == 401 || response.statusCode == 400 || response.statusCode == 404) {
+    } else if (response.statusCode == 401 ||
+        response.statusCode == 400 ||
+        response.statusCode == 404) {
       return false;
     } else {
       throw Exception('Lỗi Server (${response.statusCode})');

@@ -1,9 +1,10 @@
-import 'package:flutter/material.dart';
-import '../../../core/constants/app_colors.dart';
-import '../widgets/warning_note_card.dart';
-import '../widgets/day_selector_widget.dart';
-import 'package:admin/services/api_service.dart';
 import 'package:admin/models/cau_hinh_model.dart';
+import 'package:admin/services/api_service.dart';
+import 'package:flutter/material.dart';
+
+import '../../../core/constants/app_colors.dart';
+import '../widgets/day_selector_widget.dart';
+import '../widgets/warning_note_card.dart';
 
 class SystemConfigScreen extends StatefulWidget {
   const SystemConfigScreen({super.key});
@@ -112,8 +113,24 @@ class _SystemConfigScreenState extends State<SystemConfigScreen> {
     _endTimeController.text = model.gioKetThuc;
     _surchargeController.text = model.heSoPhi.toString();
 
+    _isActive = data['isActive'] == true;
+
     final rawDays = data['cacNgayApDung'] ?? data['days'];
-    if (rawDays != null && rawDays is List && rawDays.length == 7) {
+
+    // Backend trả CacNgayApDung dạng String, ví dụ "1111100".
+    if (rawDays is String) {
+      final daysString = rawDays.trim();
+
+      if (daysString.length == 7) {
+        _selectedDays = daysString
+            .split('')
+            .map((char) => char == '1')
+            .toList();
+      } else {
+        _selectedDays = List<bool>.filled(7, false);
+      }
+    } else if (rawDays is List && rawDays.length == 7) {
+      // Tương thích tạm nếu server cũ từng trả List<bool>.
       _selectedDays = List<bool>.from(rawDays.map((e) => e == true));
     }
   }
@@ -134,6 +151,10 @@ class _SystemConfigScreenState extends State<SystemConfigScreen> {
             double.tryParse(_surchargeController.text.replaceAll('x', '')) ??
             1.5,
         'moTa': 'Khung giờ cao điểm áp dụng phụ phí',
+        'isActive': _isActive,
+        'cacNgayApDung': _selectedDays
+            .map((selected) => selected ? '1' : '0')
+            .join(''),
       };
 
       final bool isSuccess = await ApiService.updateGioCaoDiem(payload);

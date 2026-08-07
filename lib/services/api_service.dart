@@ -1,4 +1,5 @@
 import 'dart:convert';
+
 import 'package:http/http.dart' as http;
 
 class ApiService {
@@ -47,12 +48,9 @@ class ApiService {
       final response = await http.post(
         Uri.parse('$baseUrl/DonHang/admin-phan-don'),
         headers: _headers,
-        body: jsonEncode({
-          'maDonHang': maDon,
-          'maShipper': shipperId,
-        }),
+        body: jsonEncode({'maDonHang': maDon, 'maShipper': shipperId}),
       );
-      
+
       if (response.statusCode == 200) {
         return true;
       } else {
@@ -155,7 +153,9 @@ class ApiService {
   }
 
   /// Đổi trạng thái hoạt động shipper
-  static Future<bool> doiTrangThaiHoatDongShipper(Map<String, dynamic> data) async {
+  static Future<bool> doiTrangThaiHoatDongShipper(
+    Map<String, dynamic> data,
+  ) async {
     final response = await http.post(
       Uri.parse('$baseUrl/Shipper/doi-trang-thai-hoat-dong'),
       headers: _headers,
@@ -168,12 +168,14 @@ class ApiService {
   static Future<bool> forceOffline(String maShipper) async {
     return await doiTrangThaiHoatDongShipper({
       'maShipper': maShipper,
-      'trangThaiMoi': 'NgoaiTuyen', 
+      'trangThaiMoi': 'NgoaiTuyen',
     });
   }
 
   /// Lấy thông tin chi tiết hồ sơ shipper để phê duyệt
-  static Future<Map<String, dynamic>> getChiTietShipper(String shipperId) async {
+  static Future<Map<String, dynamic>> getChiTietShipper(
+    String shipperId,
+  ) async {
     final response = await http.get(
       Uri.parse('$baseUrl/Auth/profile/$shipperId'),
       headers: _headers,
@@ -199,9 +201,7 @@ class ApiService {
     final response = await http.post(
       url,
       headers: _headers,
-      body: jsonEncode({
-        'isApproved': isApproved,
-      }),
+      body: jsonEncode({'isApproved': isApproved}),
     );
 
     if (response.statusCode != 200 && response.statusCode != 204) {
@@ -261,7 +261,9 @@ class ApiService {
   }
 
   /// Lấy bảng lương của shipper
-  static Future<Map<String, dynamic>> getBangLuongShipper(String maShipper) async {
+  static Future<Map<String, dynamic>> getBangLuongShipper(
+    String maShipper,
+  ) async {
     final response = await http.get(
       Uri.parse('$baseUrl/DoiSoat/bang-luong/$maShipper'),
       headers: _headers,
@@ -279,14 +281,38 @@ class ApiService {
     return response.statusCode == 200 || response.statusCode == 201;
   }
 
-  /// Duyệt phiếu đối soát
+  /// Duyệt phiếu đối soát COD.
+  /// data cần có: maDs, maNguoiDuyet, hanhDong = DaDuyet.
   static Future<bool> duyetPhieuDoiSoat(Map<String, dynamic> data) async {
+    final maDs = data['maDs']?.toString().trim();
+
+    if (maDs == null || maDs.isEmpty) {
+      throw Exception('Thiếu mã phiếu đối soát.');
+    }
+
     final response = await http.post(
-      Uri.parse('$baseUrl/DoiSoat/duyet-phieu/${data['maDs']}'),
+      Uri.parse('$baseUrl/DoiSoat/duyet-phieu/$maDs'),
       headers: _headers,
       body: json.encode(data),
     );
-    return response.statusCode == 200;
+
+    if (response.statusCode == 200) {
+      return true;
+    }
+
+    String message = response.body;
+
+    try {
+      final decoded = json.decode(response.body);
+
+      if (decoded is Map && decoded['message'] != null) {
+        message = decoded['message'].toString();
+      }
+    } catch (_) {
+      // Giữ nguyên response.body nếu backend không trả JSON.
+    }
+
+    throw Exception(message);
   }
 
   // ==========================================
@@ -312,7 +338,26 @@ class ApiService {
       headers: _headers,
       body: json.encode(data),
     );
-    return response.statusCode == 200;
+
+    if (response.statusCode == 200 || response.statusCode == 201) {
+      return true;
+    }
+
+    String message = response.body;
+
+    try {
+      final decoded = json.decode(response.body);
+
+      if (decoded is Map && decoded['message'] != null) {
+        message = decoded['message'].toString();
+      } else if (decoded is Map && decoded['errors'] != null) {
+        message = decoded['errors'].toString();
+      }
+    } catch (_) {
+      // Giữ raw body nếu backend không trả JSON.
+    }
+
+    throw Exception('Lưu cấu hình thất bại (${response.statusCode}): $message');
   }
 
   /// Lấy tham số hệ thống
@@ -337,7 +382,7 @@ class ApiService {
 
       if (decoded is List) {
         return decoded;
-      } 
+      }
       if (decoded is Map<String, dynamic>) {
         if (decoded.containsKey('danhSach') && decoded['danhSach'] is List) {
           return decoded['danhSach'] as List<dynamic>;
@@ -365,14 +410,14 @@ class OsrmService {
   /// Hàm lấy khoảng cách thực tế (Đường bộ) từ OSRM
   /// Trả về một Map chứa: 'distance' (km) và 'duration' (phút)
   static Future<Map<String, double>> getRealRouting(
-    double startLat, 
-    double startLng, 
-    double endLat, 
+    double startLat,
+    double startLng,
+    double endLat,
     double endLng,
   ) async {
-    // ⚠️ LƯU Ý CỰC KỲ QUAN TRỌNG: 
+    // ⚠️ LƯU Ý CỰC KỲ QUAN TRỌNG:
     // OSRM bắt buộc truyền tọa độ theo thứ tự: KINH ĐỘ (Lng) phẩy VĨ ĐỘ (Lat)
-    final String url = 
+    final String url =
         'http://router.project-osrm.org/route/v1/driving/$startLng,$startLat;$endLng,$endLat?overview=false';
 
     try {
@@ -384,15 +429,17 @@ class OsrmService {
         // Kiểm tra xem có tìm được đường đi không
         if (data['routes'] != null && data['routes'].isNotEmpty) {
           final route = data['routes'][0];
-          
+
           // OSRM trả về khoảng cách bằng MÉT -> chia 1000 ra KM
           final distanceKm = route['distance'] / 1000.0;
-          
+
           // OSRM trả về thời gian bằng GIÂY -> chia 60 ra PHÚT
           final durationMin = route['duration'] / 60.0;
 
           return {
-            'distance': double.parse(distanceKm.toStringAsFixed(1)), // Làm tròn 1 chữ số thập phân
+            'distance': double.parse(
+              distanceKm.toStringAsFixed(1),
+            ), // Làm tròn 1 chữ số thập phân
             'duration': double.parse(durationMin.toStringAsFixed(1)),
           };
         }
