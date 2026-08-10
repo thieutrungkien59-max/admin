@@ -19,7 +19,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
   List<Marker> _markers = [];
   List<Polyline> _routePolylines = [];
   List<Marker> _routeLabels = [];
-  List<DonHangModel> _pendingOrders = [];
+
+  // Các đơn active đang được vẽ trên Dashboard Map.
+  List<DonHangModel> _activeOrders = [];
+
+  // Task 8E: liên kết Shipper -> các đơn active đang phụ trách.
+  Map<String, ShipperModel> _shipperById = {};
+  Map<String, List<DonHangModel>> _activeOrdersByShipperId = {};
 
   int _pendingOrdersCount = 0;
   int _onlineShippersCount = 0;
@@ -45,7 +51,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
     try {
       final results = await Future.wait([
+        // Chỉ dùng cho card "Đơn chờ".
         ApiService.getDonHangChoNhan(),
+
+        // Dùng để vẽ map:
+        // ChoXacNhan / ChoShipperXacNhan / DaXacNhan /
+        // DangGiao / DangVanChuyen legacy.
+        ApiService.getDonHangDangHoatDong(),
+
         ApiService.getDanhSachShipper(),
         ApiService.getSoLuongDangGiao(),
         ApiService.getSoLuongCanhBaoCod(),
@@ -53,10 +66,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
       if (!mounted) return;
 
-      final rawOrders = results[0] as List<dynamic>;
-      final rawShippers = results[1] as List<dynamic>;
+      final rawPendingOrders = results[0] as List<dynamic>;
+      final rawActiveOrders = results[1] as List<dynamic>;
+      final rawShippers = results[2] as List<dynamic>;
 
-      final orders = rawOrders
+      final orders = rawActiveOrders
           .whereType<Map<String, dynamic>>()
           .map(DonHangModel.fromJson)
           .toList();
@@ -83,8 +97,26 @@ class _DashboardScreenState extends State<DashboardScreen> {
           .map(ShipperModel.fromJson)
           .toList();
 
-      final shippingCount = results[2] is int ? results[2] as int : 0;
-      final codWarningCount = results[3] is int ? results[3] as int : 0;
+      final shippingCount = results[3] is int ? results[3] as int : 0;
+      final codWarningCount = results[4] is int ? results[4] as int : 0;
+
+      final shipperById = <String, ShipperModel>{
+        for (final shipper in shippers) shipper.id: shipper,
+      };
+
+      final activeOrdersByShipperId = <String, List<DonHangModel>>{};
+
+      for (final order in orders) {
+        final maSp = order.maShipper;
+
+        if (maSp == null || maSp.isEmpty) {
+          continue;
+        }
+
+        activeOrdersByShipperId
+            .putIfAbsent(maSp, () => <DonHangModel>[])
+            .add(order);
+      }
 
       final generatedMarkers = <Marker>[];
       final routePolylines = <Polyline>[];
@@ -115,6 +147,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
               point: LatLng(order.pickupLatitude!, order.pickupLongitude!),
               color: Colors.orange,
               icon: Icons.inventory_2,
+              assignedShipper: order.maShipper == null
+                  ? null
+                  : shipperById[order.maShipper],
             ),
           );
         }
@@ -132,6 +167,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
               point: LatLng(order.deliveryLatitude!, order.deliveryLongitude!),
               color: Colors.red,
               icon: Icons.flag,
+              assignedShipper: order.maShipper == null
+                  ? null
+                  : shipperById[order.maShipper],
             ),
           );
         }
@@ -242,7 +280,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   'Mã: ${shipper.id}\n'
                   'Biển số: ${shipper.bienSo}\n'
                   'Trạng thái: ${shipper.isOnline ? "Online" : "Offline"}\n'
-                  'GPS: ${shipper.locationUpdatedAt?.toLocal() ?? "Chưa có"}',
+                  'GPS: ${shipper.locationUpdatedAt?.toLocal() ?? "Chưa có"}\n'
+                  'Đơn active: ${activeOrdersByShipperId[shipper.id]?.map((o) => o.maDon).join(', ') ?? 'Không có'}',
               child: GestureDetector(
                 onTap: () {
                   _showShipperActionSheet(shipper);
@@ -262,9 +301,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
         _markers = generatedMarkers;
         _routePolylines = routePolylines;
         _routeLabels = routeLabels;
-        _pendingOrders = orders;
+        _activeOrders = orders;
 
-        _pendingOrdersCount = orders.length;
+        _shipperById = shipperById;
+        _activeOrdersByShipperId = activeOrdersByShipperId;
+
+        // Card "Đơn chờ" vẫn giữ đúng nghĩa:
+        // chỉ đếm danh-sach-cho-nhan, không đếm tất cả active.
+        _pendingOrdersCount = rawPendingOrders.length;
+
         _onlineShippersCount = shippers
             .where((shipper) => shipper.isOnline)
             .length;
@@ -294,8 +339,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
     required LatLng point,
     required Color color,
     required IconData icon,
+    ShipperModel? assignedShipper,
   }) {
     final shortLabel = '$markerType$orderNumber • ${order.maDon}';
+    final assignedShipperLabel = assignedShipper == null
+        ? null
+        : '${assignedShipper.hoTen} • ${assignedShipper.bienSo}';
 
     final tooltipMessage =
         'Đơn #$orderNumber — ${order.maDon}\n'
@@ -306,12 +355,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
         'Khối lượng: ${order.trongLuong} kg\n'
         'COD: ${order.tienCod}\n'
         'Trạng thái: ${order.trangThai}\n'
+        'Shipper: ${assignedShipperLabel ?? 'Chưa phân'}\n'
         'Ngày tạo: ${order.ngayTao?.toLocal() ?? "Không rõ"}';
 
     return Marker(
       point: point,
       width: 150,
-      height: 58,
+      height: assignedShipper == null ? 58 : 82,
       alignment: Alignment.topCenter,
       child: Tooltip(
         waitDuration: const Duration(milliseconds: 250),
@@ -324,6 +374,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               orderNumber: orderNumber,
               locationName: locationName,
               address: address,
+              assignedShipper: assignedShipper,
             );
           },
           child: Column(
@@ -364,6 +415,43 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ],
                 ),
               ),
+              if (assignedShipper != null)
+                Container(
+                  constraints: const BoxConstraints(maxWidth: 148),
+                  margin: const EdgeInsets.only(top: 2),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.green.shade50,
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: Colors.green.shade300),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.directions_bike,
+                        size: 12,
+                        color: Colors.green,
+                      ),
+                      const SizedBox(width: 3),
+                      Flexible(
+                        child: Text(
+                          assignedShipper.hoTen,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 9,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.green,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               Icon(Icons.location_on, color: color, size: 30),
             ],
           ),
@@ -377,6 +465,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     required int orderNumber,
     required String locationName,
     required String address,
+    ShipperModel? assignedShipper,
   }) {
     showDialog<void>(
       context: context,
@@ -393,6 +482,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             'Khối lượng: ${order.trongLuong} kg\n'
             'COD: ${order.tienCod}\n'
             'Trạng thái: ${order.trangThai}\n'
+            'Shipper: ${assignedShipper == null ? 'Chưa phân' : '${assignedShipper.hoTen} (${assignedShipper.id})'}\n'
             'Ngày tạo: ${order.ngayTao?.toLocal() ?? "Không rõ"}',
           ),
           actions: [
@@ -412,6 +502,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final updatedAtText =
         shipper.locationUpdatedAt?.toLocal().toString() ??
         'Chưa có dữ liệu GPS';
+
+    final assignedOrders =
+        _activeOrdersByShipperId[shipper.id] ?? const <DonHangModel>[];
+
+    final assignedOrderText = assignedOrders.isEmpty
+        ? 'Không có đơn active'
+        : assignedOrders.map((order) => order.maDon).join(', ');
 
     showModalBottomSheet<void>(
       context: context,
@@ -438,6 +535,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   '${shipper.isOnline ? "Online" : "Offline"}',
                 ),
                 Text('GPS cập nhật: $updatedAtText'),
+                Text(
+                  'Đơn đang phụ trách (${assignedOrders.length}): '
+                  '$assignedOrderText',
+                ),
                 const SizedBox(height: 16),
                 Align(
                   alignment: Alignment.centerRight,

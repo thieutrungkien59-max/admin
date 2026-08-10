@@ -21,6 +21,7 @@ class _SystemConfigScreenState extends State<SystemConfigScreen> {
   late TextEditingController _surchargeController;
   late TextEditingController _baseShippingFeeController;
   late TextEditingController _feePerKmController;
+  late TextEditingController _maxWaitingMinutesController;
 
   bool _isLoading = true;
   bool _isSaving = false;
@@ -40,9 +41,10 @@ class _SystemConfigScreenState extends State<SystemConfigScreen> {
     _surchargeController = TextEditingController();
     _baseShippingFeeController = TextEditingController(text: '15000');
     _feePerKmController = TextEditingController(text: '5000');
+    _maxWaitingMinutesController = TextEditingController(text: '5');
 
     _fetchGioCaoDiemData();
-    _fetchShippingFeeConfig();
+    _fetchSystemParameters();
   }
 
   @override
@@ -52,6 +54,7 @@ class _SystemConfigScreenState extends State<SystemConfigScreen> {
     _surchargeController.dispose();
     _baseShippingFeeController.dispose();
     _feePerKmController.dispose();
+    _maxWaitingMinutesController.dispose();
     super.dispose();
   }
 
@@ -142,7 +145,7 @@ class _SystemConfigScreenState extends State<SystemConfigScreen> {
     }
   }
 
-  Future<void> _fetchShippingFeeConfig() async {
+  Future<void> _fetchSystemParameters() async {
     try {
       final data = await ApiService.getThamSoHeThong();
 
@@ -163,6 +166,10 @@ class _SystemConfigScreenState extends State<SystemConfigScreen> {
 
         if (key == 'PHI_MOI_KM' && value.isNotEmpty) {
           _feePerKmController.text = value;
+        }
+
+        if (key == 'THOI_GIAN_CHO_TOI_DA_PHUT' && value.isNotEmpty) {
+          _maxWaitingMinutesController.text = value;
         }
       }
 
@@ -200,6 +207,9 @@ class _SystemConfigScreenState extends State<SystemConfigScreen> {
 
       final baseFee = double.tryParse(_baseShippingFeeController.text.trim());
       final feePerKm = double.tryParse(_feePerKmController.text.trim());
+      final maxWaitingMinutes = int.tryParse(
+        _maxWaitingMinutesController.text.trim(),
+      );
 
       if (baseFee == null || baseFee < 0) {
         throw Exception('Phí vận chuyển cơ bản không hợp lệ.');
@@ -207,6 +217,10 @@ class _SystemConfigScreenState extends State<SystemConfigScreen> {
 
       if (feePerKm == null || feePerKm < 0) {
         throw Exception('Phí mỗi km không hợp lệ.');
+      }
+
+      if (maxWaitingMinutes == null || maxWaitingMinutes <= 0) {
+        throw Exception('Thời gian chờ tối đa phải lớn hơn 0 phút.');
       }
 
       await Future.wait([
@@ -220,6 +234,12 @@ class _SystemConfigScreenState extends State<SystemConfigScreen> {
           giaTri: feePerKm.toStringAsFixed(0),
           moTa: 'Đơn giá cho mỗi km đường bộ (VNĐ/km)',
         ),
+        ApiService.updateThamSoHeThong(
+          maThamSo: 'THOI_GIAN_CHO_TOI_DA_PHUT',
+          giaTri: maxWaitingMinutes.toString(),
+          moTa:
+              'Số phút tối đa đơn được phép chờ trước khi cần điều phối thủ công',
+        ),
       ]);
 
       if (!mounted) return;
@@ -228,7 +248,7 @@ class _SystemConfigScreenState extends State<SystemConfigScreen> {
         _initialData = Map<String, dynamic>.from(payload);
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Cập nhật giờ cao điểm thành công!'),
+            content: Text('Cập nhật cấu hình hệ thống thành công!'),
             backgroundColor: AppColors.statusGreen,
             duration: Duration(seconds: 3),
           ),
@@ -589,6 +609,47 @@ class _SystemConfigScreenState extends State<SystemConfigScreen> {
                                         ),
                                       ),
                                     ],
+                                  ),
+                                  const SizedBox(height: 30),
+                                  const Divider(),
+                                  const SizedBox(height: 18),
+                                  const Text(
+                                    'Cấu hình thời gian chờ điều phối',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 16,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  const Text(
+                                    'Đơn hàng vượt quá ngưỡng này sẽ được đánh dấu là cần điều phối thủ công.',
+                                    style: TextStyle(
+                                      color: AppColors.textSubtitle,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 16),
+                                  SizedBox(
+                                    width: 360,
+                                    child: TextFormField(
+                                      controller: _maxWaitingMinutesController,
+                                      keyboardType: TextInputType.number,
+                                      decoration: const InputDecoration(
+                                        labelText:
+                                            'Thời gian chờ tối đa (phút)',
+                                        hintText: 'VD: 5',
+                                        suffixText: 'phút',
+                                        border: OutlineInputBorder(),
+                                      ),
+                                      validator: (value) {
+                                        final number = int.tryParse(
+                                          value?.trim() ?? '',
+                                        );
+                                        if (number == null || number <= 0) {
+                                          return 'Thời gian phải lớn hơn 0 phút';
+                                        }
+                                        return null;
+                                      },
+                                    ),
                                   ),
                                 ],
                               ),

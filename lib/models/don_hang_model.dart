@@ -42,6 +42,13 @@ double? _parseNullableDouble(dynamic value) {
   return null;
 }
 
+String? _parseNullableString(dynamic value) {
+  if (value == null) return null;
+
+  final text = value.toString().trim();
+  return text.isEmpty ? null : text;
+}
+
 int _parseInt(dynamic value, [int defaultValue = 0]) {
   if (value == null) return defaultValue;
 
@@ -111,6 +118,11 @@ class DonHangModel {
   final String lienHeGiaoHang;
 
   final String tenNguoiNhan;
+
+  /// Mã Shipper đang được gán cho đơn.
+  /// null khi đơn chưa được phân Shipper.
+  final String? maShipper;
+
   final String trangThai;
   final DateTime? ngayTao;
 
@@ -145,6 +157,7 @@ class DonHangModel {
     required this.diemGiaoHang,
     required this.lienHeGiaoHang,
     required this.tenNguoiNhan,
+    required this.maShipper,
     required this.trangThai,
     required this.ngayTao,
     required this.duKienGiaoPhut,
@@ -256,6 +269,10 @@ class DonHangModel {
       tenNguoiNhan: (json['tenNguoiNhan'] ?? json['TenNguoiNhan'] ?? '')
           .toString(),
 
+      maShipper: _parseNullableString(
+        json['maSp'] ?? json['MaSp'] ?? json['maShipper'] ?? json['MaShipper'],
+      ),
+
       trangThai: (json['trangThai'] ?? json['TrangThai'] ?? '').toString(),
 
       ngayTao: _parseDateTime(json['ngayTao'] ?? json['NgayTao']),
@@ -335,6 +352,7 @@ class DonHangModel {
       'diemGiaoHang': diemGiaoHang,
       'lienHeGiaoHang': lienHeGiaoHang,
       'tenNguoiNhan': tenNguoiNhan,
+      'maSp': maShipper,
       'trangThai': trangThai,
       'ngayTao': ngayTao?.toIso8601String(),
       'duKienGiaoPhut': duKienGiaoPhut,

@@ -98,6 +98,12 @@ class ShipperModel {
   final int soDonDaGiao;
   final double khoangCachKm;
   final int thoiGianRanhPhut;
+
+  // TASK 5A.1 - tải trọng điều phối.
+  final double taiTrongToiDa;
+  final double taiTrongDangNhan;
+  final double taiTrongConLai;
+  final int soDonDangXuLy;
   final bool isOnline;
   final bool isOptimal;
   final String trangThaiDuyet;
@@ -112,6 +118,28 @@ class ShipperModel {
   /// Thời điểm backend ghi nhận GPS gần nhất.
   final DateTime? locationUpdatedAt;
 
+  // ==========================================================
+  // TASK 4C - TRẠNG THÁI RẢNH SHIPPER
+  // ==========================================================
+
+  /// Backend xác nhận shipper hiện có đang rảnh hay không.
+  final bool dangRanh;
+
+  /// Mốc bắt đầu tính thời gian rảnh.
+  ///
+  /// Backend Task 4B đã tính theo rule:
+  /// max(ThoiGianBatDauOnline, lần hoàn thành đơn gần nhất trong phiên).
+  final DateTime? ranhTu;
+
+  /// Mốc bắt đầu phiên online hiện tại.
+  final DateTime? thoiGianBatDauOnline;
+
+  /// Backend cho biết shipper hiện đang có đơn active hay không.
+  final bool dangCoDonHoatDong;
+
+  /// Timestamp hoàn thành đơn gần nhất, dùng để debug/đối chiếu.
+  final DateTime? lanHoanThanhGanNhat;
+
   const ShipperModel({
     required this.id,
     required this.hoTen,
@@ -121,14 +149,33 @@ class ShipperModel {
     required this.soDonDaGiao,
     required this.khoangCachKm,
     required this.thoiGianRanhPhut,
+    required this.taiTrongToiDa,
+    required this.taiTrongDangNhan,
+    required this.taiTrongConLai,
+    required this.soDonDangXuLy,
     required this.trangThaiDuyet,
     required this.lat,
     required this.lng,
     required this.locationUpdatedAt,
+    required this.dangRanh,
+    required this.ranhTu,
+    required this.thoiGianBatDauOnline,
+    required this.dangCoDonHoatDong,
+    required this.lanHoanThanhGanNhat,
     this.isOnline = false,
     this.isOptimal = false,
     this.lyDoKhongKhaDung,
   });
+
+  /// Có thể nhận thêm đơn đang chọn hay không.
+  /// Rule leader: tổng tải sau khi thêm phải NHỎ HƠN tải tối đa.
+  bool canAcceptWeight(double orderWeightKg) {
+    if (!isOnline || orderWeightKg <= 0 || taiTrongToiDa <= 0) {
+      return false;
+    }
+
+    return taiTrongDangNhan + orderWeightKg < taiTrongToiDa;
+  }
 
   bool get hasValidLocation {
     final currentLat = lat;
@@ -157,6 +204,21 @@ class ShipperModel {
     final now = updatedAt.isUtc ? DateTime.now().toUtc() : DateTime.now();
 
     return now.difference(updatedAt).inMinutes > 5;
+  }
+
+  /// Duration rảnh realtime được tính phía client từ mốc `ranhTu`.
+  ///
+  /// Không dùng `thoiGianRanhPhut` snapshot để chạy timer vì snapshot
+  /// chỉ đúng tại thời điểm API trả response.
+  Duration get idleDurationNow {
+    if (!dangRanh || ranhTu == null) {
+      return Duration.zero;
+    }
+
+    final now = ranhTu!.isUtc ? DateTime.now().toUtc() : DateTime.now();
+    final elapsed = now.difference(ranhTu!);
+
+    return elapsed.isNegative ? Duration.zero : elapsed;
   }
 
   factory ShipperModel.fromJson(Map<String, dynamic> json) {
@@ -193,6 +255,20 @@ class ShipperModel {
       thoiGianRanhPhut: _parseInt(
         json['thoiGianRanhPhut'] ?? json['ThoiGianRanhPhut'],
       ),
+
+      taiTrongToiDa: _parseDouble(
+        json['taiTrongToiDa'] ?? json['TaiTrongToiDa'],
+      ),
+
+      taiTrongDangNhan: _parseDouble(
+        json['taiTrongDangNhan'] ?? json['TaiTrongDangNhan'],
+      ),
+
+      taiTrongConLai: _parseDouble(
+        json['taiTrongConLai'] ?? json['TaiTrongConLai'],
+      ),
+
+      soDonDangXuLy: _parseInt(json['soDonDangXuLy'] ?? json['SoDonDangXuLy']),
 
       // Thiếu trạng thái phải xem là offline, không mặc định online.
       isOnline: _parseBool(
@@ -241,6 +317,23 @@ class ShipperModel {
             json['thoiGianCapNhat'] ??
             json['ThoiGianCapNhat'],
       ),
+
+      dangRanh: _parseBool(json['dangRanh'] ?? json['DangRanh'], false),
+
+      ranhTu: _parseDateTime(json['ranhTu'] ?? json['RanhTu']),
+
+      thoiGianBatDauOnline: _parseDateTime(
+        json['thoiGianBatDauOnline'] ?? json['ThoiGianBatDauOnline'],
+      ),
+
+      dangCoDonHoatDong: _parseBool(
+        json['dangCoDonHoatDong'] ?? json['DangCoDonHoatDong'],
+        false,
+      ),
+
+      lanHoanThanhGanNhat: _parseDateTime(
+        json['lanHoanThanhGanNhat'] ?? json['LanHoanThanhGanNhat'],
+      ),
     );
   }
 
@@ -261,6 +354,15 @@ class ShipperModel {
       'latitude': lat,
       'longitude': lng,
       'locationUpdatedAt': locationUpdatedAt?.toIso8601String(),
+      'taiTrongToiDa': taiTrongToiDa,
+      'taiTrongDangNhan': taiTrongDangNhan,
+      'taiTrongConLai': taiTrongConLai,
+      'soDonDangXuLy': soDonDangXuLy,
+      'dangRanh': dangRanh,
+      'ranhTu': ranhTu?.toIso8601String(),
+      'thoiGianBatDauOnline': thoiGianBatDauOnline?.toIso8601String(),
+      'dangCoDonHoatDong': dangCoDonHoatDong,
+      'lanHoanThanhGanNhat': lanHoanThanhGanNhat?.toIso8601String(),
     };
   }
 }

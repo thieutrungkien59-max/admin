@@ -40,6 +40,10 @@ class _DispatchMapScreenState extends State<DispatchMapScreen> {
   int _deliveryMarkerCount = 0;
   int _shipperMarkerCount = 0;
 
+  // Task 8D: liên kết MaSP -> shipper và các đơn active của shipper đó.
+  Map<String, ShipperModel> _shipperById = {};
+  Map<String, List<DonHangModel>> _activeOrdersByShipperId = {};
+
   @override
   void initState() {
     super.initState();
@@ -75,7 +79,7 @@ class _DispatchMapScreenState extends State<DispatchMapScreen> {
 
     try {
       final results = await Future.wait([
-        ApiService.getDonHangChoNhan(),
+        ApiService.getDonHangDangHoatDong(),
         ApiService.getDanhSachShipper(),
       ]);
 
@@ -123,6 +127,21 @@ class _DispatchMapScreenState extends State<DispatchMapScreen> {
         return isApproved && shipper.isOnline;
       }).toList();
 
+      final shipperById = <String, ShipperModel>{
+        for (final shipper in activeShippers) shipper.id: shipper,
+      };
+
+      final activeOrdersByShipperId = <String, List<DonHangModel>>{};
+
+      for (final order in orders) {
+        final maSp = order.maShipper;
+        if (maSp == null || maSp.isEmpty) continue;
+
+        activeOrdersByShipperId
+            .putIfAbsent(maSp, () => <DonHangModel>[])
+            .add(order);
+      }
+
       final generatedMarkers = <Marker>[];
       final routePolylines = <Polyline>[];
       final routeLabels = <Marker>[];
@@ -135,7 +154,7 @@ class _DispatchMapScreenState extends State<DispatchMapScreen> {
       var shipperMarkerCount = 0;
 
       // ==========================================
-      // 1. MARKER ĐƠN HÀNG
+      // 1. MARKER ĐƠN HÀNG ĐANG HOẠT ĐỘNG
       // ==========================================
       for (var index = 0; index < orders.length; index++) {
         final order = orders[index];
@@ -156,6 +175,9 @@ class _DispatchMapScreenState extends State<DispatchMapScreen> {
               point: LatLng(order.pickupLatitude!, order.pickupLongitude!),
               color: Colors.orange,
               icon: Icons.inventory_2,
+              assignedShipper: order.maShipper == null
+                  ? null
+                  : shipperById[order.maShipper],
             ),
           );
         }
@@ -174,6 +196,9 @@ class _DispatchMapScreenState extends State<DispatchMapScreen> {
               point: LatLng(order.deliveryLatitude!, order.deliveryLongitude!),
               color: Colors.red,
               icon: Icons.flag,
+              assignedShipper: order.maShipper == null
+                  ? null
+                  : shipperById[order.maShipper],
             ),
           );
         }
@@ -277,7 +302,8 @@ class _DispatchMapScreenState extends State<DispatchMapScreen> {
               message:
                   'Shipper: ${shipper.hoTen}\n'
                   'Biển số: ${shipper.bienSo}\n'
-                  'GPS cập nhật: $gpsTime',
+                  'GPS cập nhật: $gpsTime\n'
+                  'Đơn active: ${activeOrdersByShipperId[shipper.id]?.map((o) => o.maDon).join(', ') ?? 'Không có'}',
               child: GestureDetector(
                 onTap: () {
                   _showShipperDialog(shipper);
@@ -307,6 +333,9 @@ class _DispatchMapScreenState extends State<DispatchMapScreen> {
         _pickupMarkerCount = pickupMarkerCount;
         _deliveryMarkerCount = deliveryMarkerCount;
         _shipperMarkerCount = shipperMarkerCount;
+
+        _shipperById = shipperById;
+        _activeOrdersByShipperId = activeOrdersByShipperId;
 
         _isLoading = false;
         _isRefreshingSilently = false;
@@ -370,8 +399,12 @@ class _DispatchMapScreenState extends State<DispatchMapScreen> {
     required LatLng point,
     required Color color,
     required IconData icon,
+    ShipperModel? assignedShipper,
   }) {
     final shortLabel = '$markerType$orderNumber • ${order.maDon}';
+    final assignedShipperLabel = assignedShipper == null
+        ? null
+        : '${assignedShipper.hoTen} • ${assignedShipper.bienSo}';
 
     final tooltipMessage =
         'Đơn #$orderNumber — ${order.maDon}\n'
@@ -384,12 +417,13 @@ class _DispatchMapScreenState extends State<DispatchMapScreen> {
         'Khối lượng: ${order.trongLuong} kg\n'
         'COD: ${order.tienCod}\n'
         'Trạng thái: ${order.trangThai}\n'
+        'Shipper: ${assignedShipperLabel ?? 'Chưa phân'}\n'
         'Ngày tạo: ${_formatDateTime(order.ngayTao)}';
 
     return Marker(
       point: point,
       width: 160,
-      height: 66,
+      height: assignedShipper == null ? 66 : 82,
       alignment: Alignment.bottomCenter,
       child: Tooltip(
         waitDuration: const Duration(milliseconds: 250),
@@ -402,6 +436,7 @@ class _DispatchMapScreenState extends State<DispatchMapScreen> {
               orderNumber: orderNumber,
               locationType: locationType,
               address: address,
+              assignedShipper: assignedShipper,
             );
           },
           child: Column(
@@ -442,6 +477,43 @@ class _DispatchMapScreenState extends State<DispatchMapScreen> {
                   ],
                 ),
               ),
+              if (assignedShipper != null)
+                Container(
+                  constraints: const BoxConstraints(maxWidth: 156),
+                  margin: const EdgeInsets.only(top: 2),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.green.shade50,
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: Colors.green.shade300),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.directions_bike,
+                        size: 12,
+                        color: Colors.green,
+                      ),
+                      const SizedBox(width: 3),
+                      Flexible(
+                        child: Text(
+                          assignedShipper.hoTen,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 9,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.green,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               Icon(Icons.location_on, color: color, size: 34),
             ],
           ),
@@ -455,6 +527,7 @@ class _DispatchMapScreenState extends State<DispatchMapScreen> {
     required int orderNumber,
     required String locationType,
     required String address,
+    ShipperModel? assignedShipper,
   }) {
     showDialog<void>(
       context: context,
@@ -471,7 +544,8 @@ class _DispatchMapScreenState extends State<DispatchMapScreen> {
             'Điểm giao: ${order.diemGiaoHang}\n'
             'Người nhận: ${order.tenNguoiNhan}\n'
             'Liên hệ: ${order.lienHeGiaoHang}\n'
-            'Trạng thái: ${order.trangThai}',
+            'Trạng thái: ${order.trangThai}\n'
+            'Shipper: ${assignedShipper == null ? 'Chưa phân' : '${assignedShipper.hoTen} (${assignedShipper.id})'}',
           ),
           actions: [
             TextButton(
@@ -488,6 +562,12 @@ class _DispatchMapScreenState extends State<DispatchMapScreen> {
 
   void _showShipperDialog(ShipperModel shipper) {
     final updatedAtText = _formatDateTime(shipper.locationUpdatedAt);
+    final assignedOrders =
+        _activeOrdersByShipperId[shipper.id] ?? const <DonHangModel>[];
+
+    final assignedOrderText = assignedOrders.isEmpty
+        ? 'Không có đơn active'
+        : assignedOrders.map((order) => order.maDon).join(', ');
     final gpsStatus = shipper.isLocationStale
         ? 'Dữ liệu GPS đã cũ'
         : 'GPS đang cập nhật';
@@ -506,7 +586,8 @@ class _DispatchMapScreenState extends State<DispatchMapScreen> {
             'Số điện thoại: ${shipper.soDienThoai}\n'
             'Trạng thái: Online\n'
             'GPS: $gpsStatus\n'
-            'Cập nhật cuối: $updatedAtText',
+            'Cập nhật cuối: $updatedAtText\n'
+            'Đơn đang phụ trách (${assignedOrders.length}): $assignedOrderText',
           ),
           actions: [
             TextButton(

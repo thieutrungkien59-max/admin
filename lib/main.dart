@@ -1,19 +1,20 @@
-import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
 // Import cấu hình màu sắc
 import 'package:admin/core/constants/app_colors.dart';
 // Import các màn hình Giao diện
 import 'package:admin/features/auth/screens/login_screen.dart';
+import 'package:admin/features/cod_reconciliation/screens/cod_review_screen.dart';
 import 'package:admin/features/dashboard/screens/admin_main_layout.dart';
 import 'package:admin/features/dashboard/screens/dashboard_screen.dart';
-import 'package:admin/features/dispatch_map/screens/dispatch_map_screen.dart';
 import 'package:admin/features/dispatch_center/screens/dispatch_center_screen.dart';
-import 'package:admin/features/order_management/screens/order_list_screen.dart';
+import 'package:admin/features/dispatch_map/screens/dispatch_map_screen.dart';
+import 'package:admin/features/order_management/screens/admin_create_order_screen.dart';
 import 'package:admin/features/order_management/screens/order_detail_screen.dart';
-import 'package:admin/features/cod_reconciliation/screens/cod_review_screen.dart';
-import 'package:admin/features/shipper_management/screens/shipper_list_screen.dart';
+import 'package:admin/features/order_management/screens/order_list_screen.dart';
 import 'package:admin/features/shipper_management/screens/approve_shipper_screen.dart';
+import 'package:admin/features/shipper_management/screens/shipper_list_screen.dart';
 import 'package:admin/features/system_config/screens/config_screen.dart';
+import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -67,6 +68,12 @@ final GoRouter _router = GoRouter(
             final orderId = state.pathParameters['orderId'] ?? '';
             return OrderDetailScreen(orderId: orderId);
           },
+        ),
+
+        // Trang Admin tạo đơn hộ khách vãng lai
+        GoRoute(
+          path: '/admin_create_order',
+          builder: (context, state) => const AdminCreateOrderScreen(),
         ),
 
         // Trang Đối soát tài chính COD

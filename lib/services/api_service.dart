@@ -24,6 +24,23 @@ class ApiService {
     return _handleListResponse(response);
   }
 
+  /// Lấy các đơn vẫn đang hoạt động trên hệ thống Admin.
+  ///
+  /// Bao gồm:
+  /// - ChoXacNhan
+  /// - ChoShipperXacNhan
+  /// - DaXacNhan
+  /// - DangGiao
+  /// - DangVanChuyen
+  static Future<List<dynamic>> getDonHangDangHoatDong() async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/DonHang/danh-sach-dang-hoat-dong'),
+      headers: _headers,
+    );
+
+    return _handleListResponse(response);
+  }
+
   /// Lấy số lượng đơn hàng đang giao
   static Future<int> getSoLuongDangGiao() async {
     try {
@@ -42,24 +59,68 @@ class ApiService {
     }
   }
 
-  /// Phân đơn cho shipper (Đã sửa lại thành positional params để khớp UI)
+  /// Admin chỉ định đơn cho Shipper.
+  ///
+  /// Thành công:
+  /// - trả true.
+  ///
+  /// Thất bại:
+  /// - KHÔNG nuốt lỗi bằng `return false`;
+  /// - throw Exception với đúng `message` backend để UI hiển thị Snackbar.
   static Future<bool> phanDon(String maDon, String shipperId) async {
+    final url = Uri.parse('$baseUrl/DonHang/admin-phan-don');
+
+    final payload = <String, dynamic>{
+      'maDonHang': maDon.trim(),
+      'maShipper': shipperId.trim(),
+    };
+
+    print('[ADMIN_PHAN_DON] POST $url');
+    print('[ADMIN_PHAN_DON] payload = ${jsonEncode(payload)}');
+
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl/DonHang/admin-phan-don'),
+        url,
         headers: _headers,
-        body: jsonEncode({'maDonHang': maDon, 'maShipper': shipperId}),
+        body: jsonEncode(payload),
       );
 
-      if (response.statusCode == 200) {
-        return true;
-      } else {
-        print('Lỗi phân đơn: ${response.body}');
-        return false;
+      print(
+        '[ADMIN_PHAN_DON] status=${response.statusCode} '
+        'body=${response.body}',
+      );
+
+      Map<String, dynamic>? decoded;
+
+      try {
+        final raw = jsonDecode(response.body);
+
+        if (raw is Map) {
+          decoded = Map<String, dynamic>.from(raw);
+        }
+      } catch (_) {
+        // Nếu backend không trả JSON thì giữ raw body ở bên dưới.
       }
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        return true;
+      }
+
+      final backendMessage = decoded?['message']?.toString().trim();
+
+      throw Exception(
+        backendMessage != null && backendMessage.isNotEmpty
+            ? backendMessage
+            : 'Chỉ định Shipper thất bại '
+                  '(${response.statusCode}): ${response.body}',
+      );
     } catch (e) {
-      print('Lỗi gọi API phân đơn: $e');
-      return false;
+      // Giữ Exception backend để DispatchCenter hiển thị đúng message.
+      if (e is Exception) {
+        rethrow;
+      }
+
+      throw Exception('Không thể gọi API chỉ định Shipper: $e');
     }
   }
 
@@ -98,6 +159,123 @@ class ApiService {
       body: json.encode(data),
     );
     return response.statusCode == 200 || response.statusCode == 201;
+  }
+
+  /// Admin tạo đơn hộ khách vãng lai hoặc khách có tài khoản.
+  static Future<Map<String, dynamic>> adminTaoDon(
+    Map<String, dynamic> data,
+  ) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/DonHang/admin-tao-don'),
+      headers: _headers,
+      body: json.encode(data),
+    );
+
+    Map<String, dynamic>? decoded;
+
+    try {
+      final raw = json.decode(response.body);
+      if (raw is Map) {
+        decoded = Map<String, dynamic>.from(raw);
+      }
+    } catch (_) {}
+
+    if (response.statusCode == 200 || response.statusCode == 201) {
+      return decoded ?? <String, dynamic>{};
+    }
+
+    final message = decoded?['message']?.toString().trim();
+
+    throw Exception(
+      message != null && message.isNotEmpty
+          ? message
+          : 'Tạo đơn thất bại (${response.statusCode}): ${response.body}',
+    );
+  }
+
+  /// Admin cập nhật đơn chưa được phân Shipper.
+  ///
+  /// Backend sẽ tự tính lại route/ETA/phí từ tọa độ.
+  static Future<Map<String, dynamic>> adminCapNhatDon(
+    String maDh,
+    Map<String, dynamic> data,
+  ) async {
+    final orderId = maDh.trim();
+
+    if (orderId.isEmpty) {
+      throw Exception('Mã đơn hàng không hợp lệ.');
+    }
+
+    final response = await http.put(
+      Uri.parse(
+        '$baseUrl/DonHang/admin-cap-nhat-don/${Uri.encodeComponent(orderId)}',
+      ),
+      headers: _headers,
+      body: json.encode(data),
+    );
+
+    Map<String, dynamic>? decoded;
+
+    try {
+      final raw = json.decode(response.body);
+      if (raw is Map) {
+        decoded = Map<String, dynamic>.from(raw);
+      }
+    } catch (_) {}
+
+    if (response.statusCode == 200 || response.statusCode == 204) {
+      return decoded ?? <String, dynamic>{};
+    }
+
+    final message = decoded?['message']?.toString().trim();
+
+    throw Exception(
+      message != null && message.isNotEmpty
+          ? message
+          : 'Cập nhật đơn thất bại '
+                '(${response.statusCode}): ${response.body}',
+    );
+  }
+
+  /// Admin xóa đơn chưa được phân Shipper.
+  ///
+  /// Backend chỉ cho phép:
+  /// - trangThai = ChoXacNhan
+  /// - maSp = null/rỗng
+  static Future<void> adminXoaDon(String maDh) async {
+    final orderId = maDh.trim();
+
+    if (orderId.isEmpty) {
+      throw Exception('Mã đơn hàng không hợp lệ.');
+    }
+
+    final response = await http.delete(
+      Uri.parse(
+        '$baseUrl/DonHang/admin-xoa-don/${Uri.encodeComponent(orderId)}',
+      ),
+      headers: _headers,
+    );
+
+    Map<String, dynamic>? decoded;
+
+    try {
+      final raw = json.decode(response.body);
+      if (raw is Map) {
+        decoded = Map<String, dynamic>.from(raw);
+      }
+    } catch (_) {}
+
+    if (response.statusCode == 200 || response.statusCode == 204) {
+      return;
+    }
+
+    final message = decoded?['message']?.toString().trim();
+
+    throw Exception(
+      message != null && message.isNotEmpty
+          ? message
+          : 'Xóa đơn thất bại (${response.statusCode}): ${response.body}',
+    );
   }
 
   /// Cập nhật trạng thái đơn hàng
@@ -510,7 +688,69 @@ class ShippingRouteData {
   }
 }
 
+class ShipperPickupRouteData {
+  const ShipperPickupRouteData({
+    required this.distanceKm,
+    required this.durationMinutes,
+  });
+
+  final double distanceKm;
+  final double durationMinutes;
+}
+
 class OsrmService {
+  /// Tính route đường bộ từ GPS hiện tại của Shipper tới điểm lấy hàng.
+  static Future<ShipperPickupRouteData?> getShipperToPickupRoute({
+    required double shipperLat,
+    required double shipperLng,
+    required double pickupLat,
+    required double pickupLng,
+  }) async {
+    final String url =
+        'https://router.project-osrm.org/route/v1/driving/'
+        '$shipperLng,$shipperLat;$pickupLng,$pickupLat'
+        '?overview=false&steps=false';
+
+    try {
+      final response = await http.get(
+        Uri.parse(url),
+        headers: const {'User-Agent': 'LogiRoute-Admin-App/1.0'},
+      );
+
+      if (response.statusCode != 200) {
+        return null;
+      }
+
+      final data = json.decode(response.body);
+
+      if (data is! Map ||
+          data['routes'] is! List ||
+          (data['routes'] as List).isEmpty) {
+        return null;
+      }
+
+      final route = Map<String, dynamic>.from(
+        (data['routes'] as List).first as Map,
+      );
+
+      final distanceMeters = (route['distance'] as num?)?.toDouble();
+      final durationSeconds = (route['duration'] as num?)?.toDouble();
+
+      if (distanceMeters == null || durationSeconds == null) {
+        return null;
+      }
+
+      return ShipperPickupRouteData(
+        distanceKm: double.parse((distanceMeters / 1000).toStringAsFixed(1)),
+        durationMinutes: double.parse(
+          (durationSeconds / 60).toStringAsFixed(1),
+        ),
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// Hàm lấy khoảng cách thực tế (Đường bộ) từ OSRM
   /// Trả về một Map chứa: 'distance' (km) và 'duration' (phút)
   static Future<Map<String, double>> getRealRouting(
@@ -522,7 +762,7 @@ class OsrmService {
     // ⚠️ LƯU Ý CỰC KỲ QUAN TRỌNG:
     // OSRM bắt buộc truyền tọa độ theo thứ tự: KINH ĐỘ (Lng) phẩy VĨ ĐỘ (Lat)
     final String url =
-        'http://router.project-osrm.org/route/v1/driving/$startLng,$startLat;$endLng,$endLat?overview=false';
+        'https://router.project-osrm.org/route/v1/driving/$startLng,$startLat;$endLng,$endLat?overview=false';
 
     try {
       final response = await http.get(Uri.parse(url));
