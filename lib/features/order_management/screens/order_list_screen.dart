@@ -15,6 +15,8 @@ class _OrderListScreenState extends State<OrderListScreen> {
   late Future<List<dynamic>> _futureDonHang;
   final ScrollController _horizontalController = ScrollController();
 
+  String _statusFilter = 'all';
+
   @override
   void initState() {
     super.initState();
@@ -29,7 +31,7 @@ class _OrderListScreenState extends State<OrderListScreen> {
 
   void _loadData() {
     setState(() {
-      _futureDonHang = ApiService.getDonHangDangHoatDong();
+      _futureDonHang = ApiService.getDonHangQuanLy();
     });
   }
 
@@ -119,6 +121,69 @@ class _OrderListScreenState extends State<OrderListScreen> {
     }
   }
 
+  bool _matchesStatusFilter(String status) {
+    final normalized = status.trim().toLowerCase();
+
+    switch (_statusFilter) {
+      case 'processing':
+        return const {
+          'choxacnhan',
+          'choshipperxacnhan',
+          'daxacnhan',
+          'danggiao',
+          'dangvanchuyen',
+          'candieuphothucong',
+        }.contains(normalized);
+
+      case 'completed':
+        return const {'dagiao', 'hoanthanh'}.contains(normalized);
+
+      case 'failed':
+        return const {
+          'dahuy',
+          'thatbai',
+          'giaothatbai',
+          'huytrahang',
+          'hoantra',
+          'dahoantra',
+        }.contains(normalized);
+
+      default:
+        return true;
+    }
+  }
+
+  Widget _statusFilterDropdown() {
+    return SizedBox(
+      width: 190,
+      child: DropdownButtonFormField<String>(
+        value: _statusFilter,
+        isDense: true,
+        decoration: InputDecoration(
+          labelText: 'Trạng thái',
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 12,
+            vertical: 11,
+          ),
+        ),
+        items: const [
+          DropdownMenuItem(value: 'all', child: Text('Tất cả đơn')),
+          DropdownMenuItem(value: 'processing', child: Text('Đang xử lý')),
+          DropdownMenuItem(value: 'completed', child: Text('Hoàn tất')),
+          DropdownMenuItem(value: 'failed', child: Text('Thất bại / Hủy')),
+        ],
+        onChanged: (value) {
+          if (value == null) return;
+
+          setState(() {
+            _statusFilter = value;
+          });
+        },
+      ),
+    );
+  }
+
   Widget _routeCell({required String pickup, required String delivery}) {
     return SizedBox(
       width: 240,
@@ -198,12 +263,14 @@ class _OrderListScreenState extends State<OrderListScreen> {
                       ),
                       SizedBox(height: 4),
                       Text(
-                        'Các đơn đang chờ xác nhận / điều phối / đang giao',
+                        'Tra cứu toàn bộ vòng đời đơn hàng, kể cả đơn đã hoàn tất.',
                         style: TextStyle(color: Colors.black54, fontSize: 13),
                       ),
                     ],
                   ),
                 ),
+                _statusFilterDropdown(),
+                const SizedBox(width: 12),
                 ElevatedButton.icon(
                   onPressed: _loadData,
                   icon: const Icon(Icons.refresh),
@@ -249,7 +316,24 @@ class _OrderListScreenState extends State<OrderListScreen> {
                   );
                 }
 
-                final orders = snapshot.data!;
+                final orders = snapshot.data!.where((raw) {
+                  if (raw is! Map) return false;
+
+                  final don = Map<String, dynamic>.from(raw);
+
+                  final status = _text(don, const ['trangThai', 'TrangThai']);
+
+                  return _matchesStatusFilter(status);
+                }).toList();
+
+                if (orders.isEmpty) {
+                  return const Center(
+                    child: Text(
+                      'Không có đơn hàng phù hợp với bộ lọc.',
+                      style: TextStyle(color: Colors.grey, fontSize: 15),
+                    ),
+                  );
+                }
 
                 return LayoutBuilder(
                   builder: (context, constraints) {

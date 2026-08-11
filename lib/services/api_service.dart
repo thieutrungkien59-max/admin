@@ -41,6 +41,21 @@ class ApiService {
     return _handleListResponse(response);
   }
 
+
+  /// Danh sách dành riêng cho màn Quản lý Đơn hàng.
+  ///
+  /// Khác với getDonHangDangHoatDong():
+  /// endpoint này giữ cả đơn hoàn tất / hủy / thất bại để Admin
+  /// có thể tra cứu lịch sử và dùng filter.
+  static Future<List<dynamic>> getDonHangQuanLy() async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/DonHang/danh-sach-quan-ly'),
+      headers: _headers,
+    );
+
+    return _handleListResponse(response);
+  }
+
   /// Lấy số lượng đơn hàng đang giao
   static Future<int> getSoLuongDangGiao() async {
     try {

@@ -246,7 +246,9 @@ class ShipperModel {
       soDienThoai: (json['soDienThoai'] ?? json['SoDienThoai'] ?? 'N/A')
           .toString(),
 
-      danhGia: _parseDouble(json['danhGia'] ?? json['DanhGia'], 5.0),
+      // Không giả lập rating 5.0 khi backend chưa trả dữ liệu.
+      // 0.0 ở đây có nghĩa là chưa có rating thực tế.
+      danhGia: _parseDouble(json['danhGia'] ?? json['DanhGia'], 0.0),
 
       soDonDaGiao: _parseInt(json['soDonDaGiao'] ?? json['SoDonDaGiao']),
 
@@ -336,6 +338,12 @@ class ShipperModel {
       ),
     );
   }
+
+  /// Chỉ xem là có rating khi backend thực sự trả giá trị > 0.
+  bool get hasRealRating => danhGia > 0;
+
+  /// Có đơn đã giao thực tế hay chưa.
+  bool get hasDeliveredOrders => soDonDaGiao > 0;
 
   Map<String, dynamic> toJson() {
     return {

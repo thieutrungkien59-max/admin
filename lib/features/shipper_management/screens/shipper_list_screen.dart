@@ -1,7 +1,7 @@
-import 'package:flutter/material.dart';
+import 'package:admin/features/shipper_management/screens/approve_shipper_screen.dart';
 import 'package:admin/models/shipper_model.dart';
 import 'package:admin/services/api_service.dart';
-import 'package:admin/features/shipper_management/screens/approve_shipper_screen.dart'; 
+import 'package:flutter/material.dart';
 
 class ShipperListScreen extends StatefulWidget {
   const ShipperListScreen({super.key});
@@ -15,6 +15,9 @@ class _ShipperListScreenState extends State<ShipperListScreen> {
   List<ShipperModel> _shippers = [];
   bool _isLoading = true;
   String? _error;
+
+  // Tránh bấm ngắt kết nối nhiều lần trên cùng một Shipper.
+  final Set<String> _disconnectingIds = <String>{};
 
   // Bộ lọc & Tìm kiếm
   String _filterStatus = 'ALL';
@@ -58,6 +61,156 @@ class _ShipperListScreenState extends State<ShipperListScreen> {
     }
   }
 
+  Future<void> _forceOfflineShipper(ShipperModel shipper) async {
+    if (_disconnectingIds.contains(shipper.id)) return;
+
+    final bool hasActiveOrders =
+        shipper.dangCoDonHoatDong || shipper.soDonDangXuLy > 0;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Ngắt kết nối Shipper?'),
+          content: Text(
+            hasActiveOrders
+                ? '${shipper.hoTen} đang có ${shipper.soDonDangXuLy} đơn đang xử lý.\n\n'
+                      'Ngắt kết nối chỉ chuyển Shipper sang Ngoại tuyến và ngừng nhận đơn mới. '
+                      'Các đơn hiện có KHÔNG bị hủy hoặc tự chuyển cho tài xế khác.'
+                : '${shipper.hoTen} sẽ được chuyển sang Ngoại tuyến và không nhận đơn mới.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Hủy'),
+            ),
+            FilledButton.icon(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              icon: const Icon(Icons.link_off, size: 18),
+              label: const Text('Ngắt kết nối'),
+              style: FilledButton.styleFrom(
+                backgroundColor: Colors.red.shade700,
+                foregroundColor: Colors.white,
+              ),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed != true) return;
+
+    setState(() {
+      _disconnectingIds.add(shipper.id);
+    });
+
+    try {
+      final success = await ApiService.forceOffline(shipper.id);
+
+      if (!mounted) return;
+
+      if (!success) {
+        throw Exception('Backend không chấp nhận thao tác ngắt kết nối.');
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Đã chuyển ${shipper.hoTen} sang Ngoại tuyến.'),
+          backgroundColor: Colors.green.shade700,
+        ),
+      );
+
+      // Lấy dữ liệu thật lại từ backend thay vì chỉ sửa local UI.
+      await _fetchShippers();
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Không thể ngắt kết nối: '
+            '${e.toString().replaceAll('Exception: ', '')}',
+          ),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _disconnectingIds.remove(shipper.id);
+        });
+      }
+    }
+  }
+
+  Widget _buildPerformanceInfo(ShipperModel shipper) {
+    final ratingText = shipper.hasRealRating
+        ? '⭐ ${shipper.danhGia.toStringAsFixed(1)}'
+        : 'Chưa có đánh giá';
+
+    final deliveredText = '${shipper.soDonDaGiao} đơn đã giao';
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        Text(
+          ratingText,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: shipper.hasRealRating
+                ? FontWeight.w600
+                : FontWeight.normal,
+            color: shipper.hasRealRating
+                ? Colors.amber.shade800
+                : Colors.grey.shade600,
+          ),
+        ),
+        const SizedBox(height: 3),
+        Text(
+          deliveredText,
+          style: const TextStyle(fontSize: 11, color: Colors.grey),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildApprovedActions(ShipperModel shipper) {
+    final isDisconnecting = _disconnectingIds.contains(shipper.id);
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _buildPerformanceInfo(shipper),
+
+        if (shipper.isOnline) ...[
+          const SizedBox(width: 14),
+          OutlinedButton.icon(
+            onPressed: isDisconnecting
+                ? null
+                : () => _forceOfflineShipper(shipper),
+            icon: isDisconnecting
+                ? const SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.link_off, size: 16),
+            label: Text(isDisconnecting ? 'Đang ngắt...' : 'Ngắt kết nối'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: Colors.red.shade700,
+              side: BorderSide(color: Colors.red.shade300),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+              textStyle: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     // Lọc danh sách theo Tab / Dropdown và Từ khóa tìm kiếm
@@ -74,7 +227,8 @@ class _ShipperListScreenState extends State<ShipperListScreen> {
       }
 
       final query = _searchQuery.toLowerCase().trim();
-      bool matchesSearch = query.isEmpty ||
+      bool matchesSearch =
+          query.isEmpty ||
           s.hoTen.toLowerCase().contains(query) ||
           s.soDienThoai.toLowerCase().contains(query) ||
           s.bienSo.toLowerCase().contains(query);
@@ -82,8 +236,9 @@ class _ShipperListScreenState extends State<ShipperListScreen> {
       return matchesStatus && matchesSearch;
     }).toList();
 
-    final int pendingCount =
-        _shippers.where((s) => s.trangThaiDuyet == 'ChoDuyet').length;
+    final int pendingCount = _shippers
+        .where((s) => s.trangThaiDuyet == 'ChoDuyet')
+        .length;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF9F6F0),
@@ -96,9 +251,7 @@ class _ShipperListScreenState extends State<ShipperListScreen> {
             const SizedBox(height: 12),
             _buildSearchBarAndFilter(pendingCount),
             const SizedBox(height: 16),
-            Expanded(
-              child: _buildBodyList(filteredShippers),
-            ),
+            Expanded(child: _buildBodyList(filteredShippers)),
           ],
         ),
       ),
@@ -116,20 +269,14 @@ class _ShipperListScreenState extends State<ShipperListScreen> {
           children: [
             const Text(
               'Quản lý Đội ngũ Shipper',
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-              ),
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 4),
             Row(
               children: [
                 Text(
                   'Tổng số tài xế: ${_shippers.length}',
-                  style: const TextStyle(
-                    color: Colors.grey,
-                    fontSize: 13,
-                  ),
+                  style: const TextStyle(color: Colors.grey, fontSize: 13),
                 ),
                 if (pendingCount > 0) ...[
                   const SizedBox(width: 8),
@@ -182,7 +329,11 @@ class _ShipperListScreenState extends State<ShipperListScreen> {
               decoration: InputDecoration(
                 hintText: 'Tìm theo tên, SĐT, biển số...',
                 hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 13),
-                prefixIcon: const Icon(Icons.search, size: 20, color: Colors.grey),
+                prefixIcon: const Icon(
+                  Icons.search,
+                  size: 20,
+                  color: Colors.grey,
+                ),
                 suffixIcon: _searchQuery.isNotEmpty
                     ? IconButton(
                         icon: const Icon(Icons.clear, size: 18),
@@ -246,9 +397,7 @@ class _ShipperListScreenState extends State<ShipperListScreen> {
 
   Widget _buildBodyList(List<ShipperModel> filteredShippers) {
     if (_isLoading) {
-      return Center(
-        child: CircularProgressIndicator(color: primaryRed),
-      );
+      return Center(child: CircularProgressIndicator(color: primaryRed));
     }
 
     if (_error != null) {
@@ -291,15 +440,12 @@ class _ShipperListScreenState extends State<ShipperListScreen> {
   }
 
   Widget _buildShipperCard(ShipperModel shipper) {
-
     final bool isPending = shipper.trangThaiDuyet == 'ChoDuyet';
 
     return Card(
       elevation: 1,
       margin: const EdgeInsets.only(bottom: 10),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(10),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         child: Row(
@@ -308,10 +454,7 @@ class _ShipperListScreenState extends State<ShipperListScreen> {
             CircleAvatar(
               radius: 24,
               backgroundColor: _getAvatarBgColor(shipper),
-              child: Icon(
-                Icons.person,
-                color: _getAvatarIconColor(shipper),
-              ),
+              child: Icon(Icons.person, color: _getAvatarIconColor(shipper)),
             ),
             const SizedBox(width: 16),
 
@@ -333,10 +476,7 @@ class _ShipperListScreenState extends State<ShipperListScreen> {
                   const SizedBox(height: 4),
                   Text(
                     'Biển số: ${shipper.bienSo} | SĐT: ${shipper.soDienThoai}',
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: Colors.grey,
-                    ),
+                    style: const TextStyle(fontSize: 12, color: Colors.grey),
                   ),
                 ],
               ),
@@ -345,21 +485,25 @@ class _ShipperListScreenState extends State<ShipperListScreen> {
             // Nút điều hướng hoặc thông tin phụ
             if (isPending)
               ElevatedButton.icon(
-                onPressed: () async { 
-                   await Navigator.push(
-                     context,
-                     MaterialPageRoute(
-                       builder: (context) => ApproveShipperScreen(shipperId: shipper.id),
-                     ),
-                   );
-                   _fetchShippers(); // Tải lại danh sách sau khi quay lại nếu cần
+                onPressed: () async {
+                  await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) =>
+                          ApproveShipperScreen(shipperId: shipper.id),
+                    ),
+                  );
+                  _fetchShippers(); // Tải lại danh sách sau khi quay lại nếu cần
                 },
                 icon: const Icon(Icons.rate_review, size: 16),
                 label: const Text('Duyệt hồ sơ'),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: primaryRed,
                   foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
                   textStyle: const TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.bold,
@@ -367,24 +511,7 @@ class _ShipperListScreenState extends State<ShipperListScreen> {
                 ),
               )
             else
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    Icons.star,
-                    size: 14,
-                    color: Colors.amber.shade700,
-                  ),
-                  const SizedBox(width: 2),
-                  Text(
-                    '${shipper.danhGia} (${shipper.soDonDaGiao} đơn)',
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: Colors.grey,
-                    ),
-                  ),
-                ],
-              ),
+              _buildApprovedActions(shipper),
           ],
         ),
       ),
