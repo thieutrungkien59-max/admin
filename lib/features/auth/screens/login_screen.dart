@@ -1,9 +1,9 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../core/constants/app_colors.dart';
+// TODO: Thay đổi đường dẫn import này cho đúng với cấu trúc thư mục của bạn
+import 'package:admin/services/api_service.dart';
 
 class AdminLoginScreen extends StatefulWidget {
   const AdminLoginScreen({super.key});
@@ -33,6 +33,7 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
     _passwordController.dispose();
     super.dispose();
   }  
+  
   /// Tải thông tin ghi nhớ từ bộ nhớ thiết bị
   Future<void> _loadSavedLoginInfo() async {
     try {
@@ -85,22 +86,14 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
           if (mounted) {
             context.go('/dashboard');
           }
-        } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Tài khoản hoặc mật khẩu không chính xác!'),
-              backgroundColor: Colors.red,
-            ),
-          );
         }
       }
     } catch (e) {
       if (mounted) {
-        // Lỗi kết nối mạng, Server sập hoặc sai URL
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Không thể kết nối đến máy chủ: $e'),
-            backgroundColor: Colors.orange,
+            content: Text(e.toString().replaceAll('Exception: ', '')),
+            backgroundColor: Colors.red.shade700,
           ),
         );
       }
@@ -112,71 +105,35 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
   }
 
   // ===================================================================
-  // HÀM GỌI API KIỂM TRA TÀI KHOẢN TRONG DATABASE
+  // HÀM GỌI API KIỂM TRA TÀI KHOẢN (Đã chuyển sang dùng ApiService)
   // ===================================================================
   Future<bool> _checkLoginWithApi(String username, String password) async {
-    final url = Uri.parse('https://startle-kilogram-greeting.ngrok-free.dev/api/Auth/login');
+    try {
+      // 1. Đăng nhập lấy Token
+      await ApiService.login(username, password);
 
-    final response = await http.post(
-      url,
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-      },
-      body: jsonEncode({
-        'username': username,
-        'password': password,
-      }),
-    );
+      // 2. Lấy thông tin user hiện tại
+      final userData = await ApiService.getMe();
 
-    // KIỂM TRA STATUS CODE TRẢ VỀ TỪ SERVER
-    if (response.statusCode == 200 || response.statusCode == 201) {
-      final decoded = jsonDecode(utf8.decode(response.bodyBytes));
-
-      if (decoded is! Map<String, dynamic>) {
-        throw Exception('Dữ liệu đăng nhập trả về không hợp lệ');
+      // 3. Chặn đăng nhập nếu không phải Admin
+      if (userData['role'] != 'ADMIN') {
+        throw Exception('Truy cập bị từ chối. Chỉ tài khoản ADMIN mới được phép đăng nhập!');
       }
 
-      final user = decoded['user'];
-
-      if (user is! Map) {
-        throw Exception('Server không trả về thông tin tài khoản');
-      }
-
-      final userMap = Map<String, dynamic>.from(user);
-      final maTk = userMap['maTk']?.toString().trim();
-
-      if (maTk == null || maTk.isEmpty) {
-        throw Exception('Server không trả về mã tài khoản');
-      }
-
-      // Lưu thông tin phiên đăng nhập để các màn Admin sử dụng.
-      // Chức năng duyệt đối soát COD cần admin_ma_tk làm NguoiDuyet.
+      // 4. Lưu thông tin phiên đăng nhập để các màn Admin sử dụng
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('admin_ma_tk', maTk);
-
-      final tenDangNhap = userMap['tenDangNhap']?.toString();
-      if (tenDangNhap != null && tenDangNhap.isNotEmpty) {
-        await prefs.setString('admin_ten_dang_nhap', tenDangNhap);
-      }
-
-      final loaiTaiKhoan = userMap['loaiTaiKhoan'];
-      if (loaiTaiKhoan is int) {
-        await prefs.setInt('admin_loai_tai_khoan', loaiTaiKhoan);
-      }
+      await prefs.setString('admin_ma_tk', userData['userId'].toString());
+      await prefs.setString('admin_ten_dang_nhap', userData['email'].toString());
+      await prefs.setString('admin_role', userData['role'].toString());
 
       return true;
-    } else if (response.statusCode == 401 ||
-        response.statusCode == 400 ||
-        response.statusCode == 404) {
-      return false;
-    } else {
-      throw Exception('Lỗi Server (${response.statusCode})');
+    } catch (e) {
+      rethrow;
     }
   }
 
   // ===================================================================
-  // PHẦN GIAO DIỆN (UI)
+  // PHẦN GIAO DIỆN (UI) - Giữ nguyên không đổi
   // ===================================================================
   @override
   Widget build(BuildContext context) {
@@ -313,7 +270,6 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
                 ),
               ),
 
-              // Cột bên phải: Form đăng nhập
               Expanded(
                 flex: 5,
                 child: Center(
@@ -366,9 +322,8 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
             ),
             const SizedBox(height: 36),
 
-            // Ô nhập tài khoản
             const Text(
-              'Tài khoản (Email/Username)',
+              'Tài khoản (Email)',
               style: TextStyle(
                 fontWeight: FontWeight.bold,
                 fontSize: 13,
@@ -405,11 +360,10 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
             ),
             const SizedBox(height: 20),
 
-            // Ô nhập mật khẩu
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text(
+              children: const [
+                Text(
                   'Mật khẩu (Password)',
                   style: TextStyle(
                     fontWeight: FontWeight.bold,
@@ -456,7 +410,6 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
             ),
             const SizedBox(height: 16),
 
-            // Checkbox Ghi nhớ phiên đăng nhập
             Row(
               children: [
                 SizedBox(
@@ -482,7 +435,6 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
             ),
             const SizedBox(height: 28),
 
-            // Nút bấm Đăng nhập
             SizedBox(
               width: double.infinity,
               height: 46,
@@ -516,7 +468,6 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
             ),
             const SizedBox(height: 36),
 
-            // Chú thích & Footer
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: const [
