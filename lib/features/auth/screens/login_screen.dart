@@ -104,12 +104,12 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
     }
   }
 
-  // ===================================================================
-  // HÀM GỌI API KIỂM TRA TÀI KHOẢN (Đã chuyển sang dùng ApiService)
+ // ===================================================================
+  // HÀM GỌI API KIỂM TRA TÀI KHOẢN
   // ===================================================================
   Future<bool> _checkLoginWithApi(String username, String password) async {
     try {
-      // 1. Đăng nhập lấy Token
+      // 1. Đăng nhập lấy Token (Token đã tự động lưu ngầm ở bước này)
       await ApiService.login(username, password);
 
       // 2. Lấy thông tin user hiện tại
@@ -117,6 +117,9 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
 
       // 3. Chặn đăng nhập nếu không phải Admin
       if (userData['role'] != 'ADMIN') {
+        // BỔ SUNG QUAN TRỌNG: Xóa ngay Token rác ra khỏi bộ nhớ
+        await ApiService.logout();
+        
         throw Exception('Truy cập bị từ chối. Chỉ tài khoản ADMIN mới được phép đăng nhập!');
       }
 
@@ -131,7 +134,6 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
       rethrow;
     }
   }
-
   // ===================================================================
   // PHẦN GIAO DIỆN (UI) - Giữ nguyên không đổi
   // ===================================================================

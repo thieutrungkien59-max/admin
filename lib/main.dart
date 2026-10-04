@@ -1,5 +1,6 @@
 // Import cấu hình màu sắc
 import 'package:admin/core/constants/app_colors.dart';
+import 'package:admin/services/api_service.dart';
 // Import các màn hình Giao diện
 import 'package:admin/features/auth/screens/login_screen.dart';
 import 'package:admin/features/cod_reconciliation/screens/cod_review_screen.dart';
@@ -16,8 +17,9 @@ import 'package:admin/features/system_config/screens/config_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await ApiService.loadToken();
   runApp(const LogiRouteAdminApp());
 }
 

@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 
 class ApiService {
   static const String baseUrl =
@@ -16,6 +17,19 @@ class ApiService {
 
   static void setToken(String token) {
     _token = token;
+  }
+
+// BỔ SUNG 1: Hàm gọi khi vừa mở app để nạp lại token cũ
+  static Future<void> loadToken() async {
+    final prefs = await SharedPreferences.getInstance();
+    _token = prefs.getString('jwt_token');
+  }
+
+  // BỔ SUNG 2: Hàm đăng xuất để xóa token
+  static Future<void> logout() async {
+    _token = null;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('jwt_token');
   }
 
   // ==========================================
@@ -37,12 +51,13 @@ class ApiService {
 
     if (response.statusCode == 200) {
       final data = jsonDecode(response.body);
-      _token = data['accessToken'];
+      _token = data['accessToken']; // Gán token vào biến tạm[cite: 6]
 
-      // THÊM DÒNG NÀY ĐỂ IN TOKEN RA CONSOLE:
-      print('====== TOKEN CỦA TUI NÈ ======');
-      print(_token);
-      print('================================');
+      // BỔ SUNG 3: Lưu token vĩnh viễn vào bộ nhớ điện thoại
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('jwt_token', _token!);
+
+      print('====== TOKEN ĐÃ ĐƯỢC LƯU TỰ ĐỘNG ======');
       
       return data;
     }
